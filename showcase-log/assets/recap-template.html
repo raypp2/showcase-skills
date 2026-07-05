@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{PROJECT_NAME}} — Recap</title>
+<style>
+:root {
+  --ink: #1a1a1a; --muted: #6b6b6b; --line: #e8e5e0;
+  --accent: #b5562f; --bg: #fbfaf8; --card: #ffffff; --card-border: #e8e5e0;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  background: var(--bg); color: var(--ink); line-height: 1.5;
+}
+.page { max-width: 1080px; margin: 0 auto; padding: 56px 24px 80px; }
+h1 { font-size: 2rem; margin: 0 0 6px; letter-spacing: -0.01em; }
+.subtitle { color: var(--muted); font-size: 0.92rem; margin: 0 0 12px; }
+.project-desc { font-size: 0.92rem; color: #444; line-height: 1.55; margin: 0 0 40px; max-width: 620px; }
+
+/* -- Stat cards -- */
+.stat-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 48px; }
+.stat {
+  flex: 1; min-width: 140px; background: var(--card); border: 1px solid var(--card-border);
+  border-radius: 10px; padding: 16px 18px;
+}
+.stat-value { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.01em; }
+.stat-label { font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 2px; }
+
+/* -- Sections -- */
+section { margin-bottom: 48px; }
+h2 {
+  font-size: 1.05rem; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--muted); margin: 0 0 16px; border-bottom: 1px solid var(--line); padding-bottom: 8px;
+}
+
+/* -- Tables -- */
+table { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin-bottom: 8px; }
+th, td { text-align: left; padding: 7px 10px; }
+th { color: var(--muted); font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+tbody tr:not(:last-child) td { border-bottom: 1px solid var(--line); }
+tbody tr.total td { font-weight: 700; border-top: 2px solid var(--ink); }
+.cost-tables { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
+@media (max-width: 640px) { .cost-tables { grid-template-columns: 1fr; } }
+
+/* -- Interactive cost bars -- */
+.cost-chart { display: flex; align-items: flex-end; gap: 3px; height: 200px; padding: 0 2px; position: relative; }
+.cost-bar-wrap {
+  flex: 1; display: flex; flex-direction: column; align-items: center;
+  height: 100%; justify-content: flex-end; cursor: pointer; position: relative;
+}
+.cost-bar {
+  width: 100%; border-radius: 3px 3px 0 0; transition: opacity 0.15s, transform 0.15s;
+}
+.cost-bar-wrap:hover .cost-bar { transform: scaleY(1.03); }
+.cost-bar-wrap.active .cost-bar { box-shadow: 0 0 0 2px var(--ink); }
+.cost-bar-label { font-size: 8px; color: #bbb; margin-top: 4px; }
+.date-axis { display: flex; justify-content: space-between; font-size: 10px; color: #bbb; }
+
+/* Tooltip */
+.bar-tooltip {
+  display: none; position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+  background: var(--ink); color: #fff; padding: 8px 12px; border-radius: 6px;
+  font-size: 11px; line-height: 1.5; white-space: nowrap; z-index: 10;
+  margin-bottom: 8px; pointer-events: none;
+}
+.bar-tooltip::after {
+  content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+  border: 5px solid transparent; border-top-color: var(--ink);
+}
+.cost-bar-wrap:hover .bar-tooltip { display: block; }
+.tt-date { font-weight: 700; font-size: 12px; }
+.tt-row { display: flex; justify-content: space-between; gap: 16px; }
+.tt-label { color: #aaa; }
+
+/* -- Workstreams swimlane -- */
+.ws-container { position: relative; }
+.ws-row { display: flex; align-items: center; margin-bottom: 5px; }
+.ws-label { width: 130px; flex-shrink: 0; font-size: 12px; font-weight: 500; text-align: right; padding-right: 10px; }
+.ws-track { flex: 1; height: 24px; position: relative; background: #f0f0f0; border-radius: 3px; overflow: hidden; }
+.ws-bar { position: absolute; top: 2px; height: 20px; border-radius: 2px; }
+.ws-date-axis { margin-left: 130px; margin-top: 6px; margin-bottom: 16px; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 12px; }
+.legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #666; }
+.legend-swatch { width: 10px; height: 10px; border-radius: 2px; }
+
+.ws-desc-list { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 14px; }
+.ws-desc-item { display: flex; gap: 10px; margin-bottom: 12px; }
+.ws-desc-item:last-child { margin-bottom: 0; }
+.ws-desc-dot { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; margin-top: 2px; }
+.ws-desc-text { flex: 1; }
+.ws-desc-name { font-size: 13px; font-weight: 600; }
+.ws-desc-body { font-size: 12px; color: #777; line-height: 1.45; margin-top: 1px; }
+.ws-desc-cost { font-size: 11px; font-weight: 600; color: #10b981; margin-top: 2px; }
+
+/* Vertical hover line on swimlane */
+.ws-hover-line {
+  display: none; position: absolute; top: 0; width: 2px; background: rgba(0,0,0,0.25);
+  height: calc(100% - 30px); pointer-events: none; z-index: 5;
+}
+.ws-hover-line.visible { display: block; }
+.ws-hover-date {
+  position: absolute; top: -20px; left: 50%; transform: translateX(-50%);
+  font-size: 10px; font-weight: 600; color: var(--ink); background: var(--bg);
+  padding: 1px 5px; border-radius: 3px; white-space: nowrap;
+}
+.ws-click-zones {
+  position: absolute; top: 0; left: 130px; right: 0; height: calc(100% - 30px);
+  z-index: 4; cursor: pointer;
+}
+
+/* -- Dual timeline -- */
+.tl-row { display: flex; align-items: flex-start; min-height: 48px; }
+.tl-left { flex: 1; text-align: right; padding-right: 20px; }
+.tl-center { width: 60px; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; }
+.tl-right { flex: 1; padding-left: 20px; }
+.tl-date-badge {
+  font-size: 11px; font-weight: 700; color: #fff; background: var(--ink);
+  padding: 3px 8px; border-radius: 10px; z-index: 2; white-space: nowrap;
+}
+.tl-connector { width: 2px; flex: 1; min-height: 20px; background: var(--line); }
+.tl-ms-card {
+  display: inline-block; text-align: left; padding: 8px 12px; border-radius: 8px;
+  border: 1px solid #fde68a; background: #fffbeb; margin-bottom: 6px; max-width: 280px;
+}
+.tl-ms-title { font-size: 13px; font-weight: 600; color: #92400e; }
+.tl-ms-desc { font-size: 11px; color: #a16207; line-height: 1.35; margin-top: 2px; }
+.tl-cap-card {
+  display: inline-block; text-align: left; padding: 8px 12px; border-radius: 8px;
+  border: 1px solid #c4b5fd; background: #f5f3ff; margin-bottom: 6px; max-width: 280px;
+}
+.tl-cap-title { font-size: 13px; font-weight: 600; color: #5b21b6; }
+.tl-cap-desc { font-size: 11px; color: #7c3aed; line-height: 1.35; margin-top: 2px; }
+.tl-gap { text-align: center; font-size: 11px; font-style: italic; color: #ccc; padding: 6px 0; }
+.tl-header-left { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #f59e0b; text-align: right; padding-right: 20px; }
+.tl-header-right { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #8b5cf6; padding-left: 20px; }
+
+/* -- Side panel -- */
+.panel-overlay {
+  display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.3); z-index: 100;
+}
+.panel-overlay.open { display: block; }
+.side-panel {
+  position: fixed; top: 0; right: -420px; width: 420px; max-width: 90vw; height: 100vh;
+  background: #fff; box-shadow: -4px 0 20px rgba(0,0,0,0.15); z-index: 101;
+  transition: right 0.25s ease; overflow-y: auto; padding: 0;
+}
+.side-panel.open { right: 0; }
+.panel-header {
+  position: sticky; top: 0; background: #fff; padding: 20px 20px 14px;
+  border-bottom: 1px solid #eee; z-index: 2;
+}
+.panel-close {
+  position: absolute; top: 16px; right: 16px; width: 28px; height: 28px;
+  border: none; background: #f0f0f0; border-radius: 50%; cursor: pointer;
+  font-size: 16px; color: #666; display: flex; align-items: center; justify-content: center;
+}
+.panel-close:hover { background: #e0e0e0; }
+.panel-date { font-size: 18px; font-weight: 700; }
+.panel-stats { font-size: 12px; color: #888; margin-top: 4px; }
+.panel-stats strong { color: #10b981; }
+.panel-body { padding: 16px 20px; }
+.entry-item { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid #f0f0f0; }
+.entry-item:last-child { border-bottom: none; }
+.entry-dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; margin-top: 4px; }
+.entry-text { flex: 1; }
+.entry-desc { font-size: 13px; font-weight: 500; line-height: 1.4; }
+.entry-meta { font-size: 10px; color: #aaa; margin-top: 2px; }
+.entry-tag {
+  display: inline-block; font-size: 9px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.03em; padding: 1px 5px; border-radius: 3px; margin-right: 4px;
+}
+.tag-linkedin { background: #dbeafe; color: #1e40af; }
+.tag-app { background: #d1fae5; color: #065f46; }
+
+.viz-card {
+  padding: 18px; margin-bottom: 24px; border-radius: 10px;
+  border: 1px solid var(--card-border); background: var(--card);
+}
+
+.section-label {
+  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--muted); margin-bottom: 10px;
+}
+
+/* -- Narrative sections -- */
+.narrative { font-size: 0.92rem; color: #333; line-height: 1.65; }
+.narrative p { margin-bottom: 14px; max-width: 720px; }
+.narrative p:last-child { margin-bottom: 0; }
+.narrative-lead { font-size: 0.95rem; font-weight: 500; color: var(--ink); margin-bottom: 14px; }
+.pattern-block { margin-bottom: 28px; }
+.pattern-block:last-child { margin-bottom: 0; }
+.pattern-tag {
+  display: inline-block; font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.05em; padding: 2px 8px; border-radius: 4px; margin-bottom: 8px;
+}
+.tag-dynamics { background: #ede9fe; color: #5b21b6; }
+.tag-forward { background: #d1fae5; color: #065f46; }
+.tag-optimize { background: #fce7f3; color: #9d174d; }
+
+/* -- Milestones list (deterministic) -- */
+.milestone-list { list-style: none; margin: 0; padding: 0; }
+.milestone-list li {
+  padding: 10px 0; border-bottom: 1px solid var(--line); display: flex; gap: 14px; font-size: 0.92rem;
+}
+.milestone-list li:last-child { border-bottom: none; }
+.milestone-list .m-date { color: var(--muted); flex-shrink: 0; width: 90px; font-variant-numeric: tabular-nums; }
+
+/* -- Decisions -- */
+.decision {
+  background: var(--card); border: 1px solid var(--card-border); border-radius: 8px;
+  padding: 12px 16px; margin-bottom: 10px;
+}
+.decision .d-label { font-weight: 600; font-size: 0.88rem; margin-bottom: 4px; }
+.decision .d-date { color: var(--muted); font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.03em; }
+.decision ul { margin: 6px 0 0; padding-left: 18px; font-size: 0.87rem; color: #3a3a3a; }
+.note { color: var(--muted); font-size: 0.85rem; font-style: italic; margin-top: 4px; }
+.empty-note { color: var(--muted); font-size: 0.9rem; }
+
+footer {
+  margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--card-border);
+  font-size: 0.82rem; color: var(--muted);
+}
+
+/* ========== MOBILE RESPONSIVE ========== */
+@media (max-width: 680px) {
+  .page { max-width: 100%; padding: 32px 16px 60px; }
+  h1 { font-size: 1.5rem; }
+  .subtitle { font-size: 0.82rem; }
+  .project-desc { font-size: 0.85rem; }
+
+  /* Stat cards: 2-column grid */
+  .stat-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .stat { min-width: 0; padding: 12px 14px; }
+  .stat-value { font-size: 1.25rem; }
+
+  /* Cost chart */
+  .cost-chart { height: 160px; gap: 2px; overflow-x: auto; min-width: 0; }
+  .cost-bar-wrap { min-width: 10px; }
+  .cost-bar-label { font-size: 7px; }
+
+  /* Tooltips: hover doesn't apply on touch; the side panel shows the same info on tap */
+  .cost-bar-wrap:hover .bar-tooltip { display: none; }
+  .bar-tooltip { white-space: normal; min-width: 140px; max-width: 200px;
+    left: auto; right: auto; transform: none; font-size: 10px; }
+
+  /* Workstream swimlane: compact labels */
+  .ws-label { width: 70px; font-size: 10px; padding-right: 6px; }
+  .ws-click-zones { left: 70px; }
+  .ws-date-axis, .date-axis.ws-date-axis { margin-left: 70px !important; }
+  .ws-track { height: 20px; }
+  .ws-bar { top: 2px; height: 16px; }
+  .ws-desc-name { font-size: 12px; }
+  .ws-desc-body { font-size: 11px; }
+  .ws-desc-cost { font-size: 10px; }
+  .legend { gap: 8px; }
+  .legend-item { font-size: 10px; }
+
+  /* Dual timeline: stack vertically */
+  .tl-row { flex-direction: column; align-items: flex-start; min-height: auto; margin-bottom: 16px; }
+  .tl-left, .tl-right { text-align: left; padding: 0; width: 100%; }
+  .tl-left { padding-right: 0; }
+  .tl-right { padding-left: 0; }
+  .tl-center { width: 100%; flex-direction: row; gap: 8px; margin: 4px 0; align-items: center; }
+  .tl-connector { display: none; }
+  .tl-ms-card, .tl-cap-card { max-width: 100%; display: block; margin-bottom: 8px; }
+  .tl-header-left, .tl-header-right { text-align: left; padding: 0; }
+  .tl-row:first-child { flex-direction: row; gap: 8px; margin-bottom: 12px; }
+
+  /* Tables */
+  th, td { padding: 6px 6px; font-size: 0.82rem; }
+
+  /* Side panel: full width */
+  .side-panel { width: 100vw; max-width: 100vw; right: -100vw; }
+  .side-panel.open { right: 0; }
+
+  /* Narrative */
+  .narrative p { font-size: 0.85rem; }
+  .pattern-tag { font-size: 9px; }
+
+  /* Viz cards */
+  .viz-card { padding: 14px 12px; }
+
+  /* Date axis */
+  .date-axis { font-size: 9px; }
+}
+
+/* Small phones */
+@media (max-width: 400px) {
+  .page { padding: 24px 12px 48px; }
+  .stat-row { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .stat { padding: 10px 10px; }
+  .stat-value { font-size: 1.1rem; }
+  .stat-label { font-size: 0.7rem; }
+  .ws-label { width: 55px; font-size: 9px; }
+  .ws-click-zones { left: 55px; }
+  .ws-date-axis, .date-axis.ws-date-axis { margin-left: 55px !important; }
+}
+
+/* -- No-JS panel via :target -- */
+.day-panel-target {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 99;
+}
+.day-panel-target:target {
+  display: flex;
+  justify-content: flex-end;
+}
+.day-panel-target .panel-bg {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.3);
+}
+.day-panel-target .panel-fg {
+  position: relative; width: 420px; max-width: 90vw; height: 100vh;
+  background: #fff; box-shadow: -4px 0 20px rgba(0,0,0,0.15);
+  overflow-y: auto; z-index: 1;
+}
+@media (max-width: 680px) {
+  .day-panel-target .panel-fg { width: 100vw; max-width: 100vw; }
+}
+.day-panel-target .panel-fg .panel-header { position: sticky; top: 0; background: #fff; padding: 20px 20px 14px; border-bottom: 1px solid #eee; z-index: 2; }
+.day-panel-target .panel-fg .panel-body { padding: 16px 20px; }
+.day-panel-target .panel-fg .panel-date { font-size: 18px; font-weight: 700; }
+.day-panel-target .panel-fg .panel-stats { font-size: 12px; color: #888; margin-top: 4px; }
+.day-panel-target .panel-fg .panel-stats strong { color: #10b981; }
+.panel-close-link {
+  position: absolute; top: 16px; right: 16px; width: 28px; height: 28px;
+  background: #f0f0f0; border-radius: 50%; display: flex; align-items: center;
+  justify-content: center; font-size: 16px; color: #666; text-decoration: none;
+}
+.panel-close-link:hover { background: #e0e0e0; }
+/* Swimlane day links */
+.ws-day-link {
+  position: absolute; top: 0; bottom: 0; display: block; z-index: 3;
+}
+</style>
+</head>
+<body>
+<!-- Auto-generated by scripts/generate-recap.mjs — do not hand-edit.
+     Regenerate: node scripts/generate-recap.mjs -->
+<div class="page" id="page">
+
+<!-- ========== HEADER ========== -->
+<header>
+  <h1>{{PROJECT_NAME}}</h1>
+  <p class="subtitle">Recap &middot; {{DATE_RANGE}} &middot; generated {{GENERATED_DATE}}</p>
+  <p class="project-desc">{{PROJECT_DESC}}</p>
+</header>
+
+<!-- ========== STAT CARDS ========== -->
+<div class="stat-row">
+  <div class="stat"><div class="stat-value">{{ENTRY_COUNT}}</div><div class="stat-label">Logged interactions</div></div>
+  <div class="stat"><div class="stat-value">{{DAY_COUNT}}</div><div class="stat-label">Days of activity</div></div>
+  <div class="stat"><div class="stat-value">{{HOURS_ESTIMATE}}</div><div class="stat-label">Claude working time</div></div>
+  <div class="stat"><div class="stat-value">{{TOTAL_COST}}</div><div class="stat-label">API-equivalent cost</div></div>
+</div>
+
+<!-- ========== DAILY ACTIVITY ========== -->
+<section class="recap-section" data-section="daily-activity">
+  <h2>Daily activity</h2>
+  <div class="viz-card">
+    <div class="cost-chart" id="cost-chart">
+      {{DAILY_BARS}}
+    </div>
+    <div style="font-size:11px; color:#aaa; margin-top:8px; text-align:center;">Tap or hover for summary &middot; Tap again to see all entries</div>
+  </div>
+</section>
+
+<!-- ========== COST & TIME ========== -->
+<section class="recap-section" data-section="cost">
+  <h2>Cost &amp; time</h2>
+  <div class="cost-tables">
+    <div>
+      {{COST_BY_MODEL_TABLE}}
+    </div>
+    <div>
+      {{COST_BY_WINDOW_TABLE}}
+    </div>
+  </div>
+</section>
+
+<!-- ========== WORKSTREAMS ========== -->
+<section class="recap-section" data-section="workstreams">
+  <h2>Workstreams</h2>
+  {{WORKSTREAMS_SECTION}}
+</section>
+
+<!-- ========== MILESTONES (deterministic) ========== -->
+<section class="recap-section" data-section="milestones">
+  <h2>Milestones</h2>
+  {{MILESTONES_SECTION}}
+</section>
+
+<!-- ========== KEY DECISIONS ========== -->
+<section class="recap-section" data-section="decisions">
+  <h2>Key Decisions</h2>
+  {{DECISIONS_SECTION}}
+</section>
+
+<!-- ========== MILESTONES & CAPABILITIES TIMELINE (AI) ========== -->
+<section class="recap-section" data-section="timeline">
+  <h2>Milestones &amp; capabilities</h2>
+  {{TIMELINE_SECTION}}
+</section>
+
+<!-- ========== HOW YOU USE CLAUDE (AI) ========== -->
+<section class="recap-section" data-section="patterns">
+  <h2>How you use Claude</h2>
+  {{PATTERNS_SECTION}}
+</section>
+
+<!-- ========== RECOMMENDATIONS (AI) ========== -->
+<section class="recap-section" data-section="recommendations">
+  <h2>Recommendations</h2>
+  {{RECOMMENDATIONS_SECTION}}
+</section>
+
+<footer>Generated from <code>session-log/</code> by showcase-log</footer>
+
+</div><!-- .page -->
+
+<!-- JS-powered Side Panel -->
+<div class="panel-overlay" id="panel-overlay"></div>
+<div class="side-panel" id="side-panel">
+  <div class="panel-header">
+    <button class="panel-close" id="panel-close">&times;</button>
+    <div class="panel-date" id="panel-date"></div>
+    <div class="panel-stats" id="panel-stats"></div>
+  </div>
+  <div class="panel-body" id="panel-body"></div>
+</div>
+
+<!-- ========== PRE-RENDERED DAY PANELS (no-JS :target) ========== -->
+{{DAY_PANELS}}
+
+<script>
+// ============ ENTRY DATA ============
+{{ENTRIES_JS}}
+
+// ============ DAILY DATA ============
+{{DAILY_DATA_JS}}
+
+// ============ DAY LABELS ============
+{{TOTAL_DAYS_JS}}
+var dayLabels = [];
+{{START_DATE_JS}}
+for (var d = 0; d < totalDays; d++) {
+  var dt = new Date(startDate.getTime() + d * 86400000);
+  var m = dt.toLocaleDateString('en-US', { month: 'short' });
+  dayLabels.push(m + ' ' + dt.getDate());
+}
+
+function dayIndexToKey(idx) {
+  if (idx < 0 || idx >= dayLabels.length) return null;
+  return dayLabels[idx];
+}
+
+// ============ SWIMLANE HOVER LINE ============
+var wsContainer = document.getElementById('ws-container');
+var hoverLine = document.getElementById('ws-hover-line');
+var hoverDate = document.getElementById('ws-hover-date');
+var clickZones = document.getElementById('ws-click-zones');
+
+function getLabelWidth() {
+  var w = window.innerWidth;
+  if (w <= 400) return 55;
+  if (w <= 680) return 70;
+  return 130;
+}
+
+function getDayFromX(clientX) {
+  var rect = clickZones.getBoundingClientRect();
+  var x = clientX - rect.left;
+  var pct = x / rect.width;
+  var dayIdx = Math.round(pct * (totalDays - 1));
+  if (dayIdx < 0) dayIdx = 0;
+  if (dayIdx >= totalDays) dayIdx = totalDays - 1;
+  return dayIdx;
+}
+
+function showHoverLine(dayIdx) {
+  var labelW = getLabelWidth();
+  var lineX = labelW + (dayIdx / totalDays) * (wsContainer.offsetWidth - labelW);
+  hoverLine.style.left = lineX + 'px';
+  hoverLine.classList.add('visible');
+  hoverDate.textContent = dayLabels[dayIdx] || '';
+}
+
+if (clickZones) {
+  clickZones.addEventListener('mousemove', function(ev) {
+    var dayIdx = getDayFromX(ev.clientX);
+    showHoverLine(dayIdx);
+  });
+
+  clickZones.addEventListener('mouseleave', function() {
+    hoverLine.classList.remove('visible');
+  });
+
+  clickZones.addEventListener('click', function(ev) {
+    var dayIdx = getDayFromX(ev.clientX);
+    var key = dayLabels[dayIdx];
+    if (key && E[key]) openPanel(key);
+  });
+
+  // Touch events for swimlane
+  clickZones.addEventListener('touchmove', function(ev) {
+    ev.preventDefault();
+    var touch = ev.touches[0];
+    var dayIdx = getDayFromX(touch.clientX);
+    showHoverLine(dayIdx);
+  }, { passive: false });
+
+  clickZones.addEventListener('touchend', function(ev) {
+    var touch = ev.changedTouches[0];
+    var dayIdx = getDayFromX(touch.clientX);
+    var key = dayLabels[dayIdx];
+    hoverLine.classList.remove('visible');
+    if (key && E[key]) openPanel(key);
+  });
+
+  clickZones.addEventListener('touchstart', function(ev) {
+    var touch = ev.touches[0];
+    var dayIdx = getDayFromX(touch.clientX);
+    showHoverLine(dayIdx);
+  }, { passive: true });
+}
+
+// ============ COST BAR EVENTS ============
+var chartEl = document.getElementById('cost-chart');
+if (chartEl) {
+  var allBarWraps = chartEl.querySelectorAll('.cost-bar-wrap');
+  allBarWraps.forEach(function(wrap) {
+    var dayKey = wrap.getAttribute('data-day');
+    wrap.addEventListener('click', function() { if (dayKey) openPanel(dayKey); });
+
+    // Touch: one tap opens the panel directly (it shows the same info the
+    // hover tooltip would have) — preventDefault so the synthetic click that
+    // follows touchstart doesn't also fire and double-open/close it.
+    wrap.addEventListener('touchstart', function(ev) {
+      var isMobile = window.innerWidth <= 680;
+      if (!isMobile) return;
+      ev.preventDefault();
+      if (dayKey) openPanel(dayKey);
+    }, { passive: false });
+  });
+}
+
+// ============ SIDE PANEL ============
+var overlay = document.getElementById('panel-overlay');
+var panel = document.getElementById('side-panel');
+var panelDate = document.getElementById('panel-date');
+var panelStats = document.getElementById('panel-stats');
+var panelBody = document.getElementById('panel-body');
+
+function openPanel(dayKey) {
+  var entries = E[dayKey] || [];
+  var dayData = null;
+  for (var i = 0; i < dailyData.length; i++) {
+    if (dailyData[i].key === dayKey) { dayData = dailyData[i]; break; }
+  }
+
+  panelDate.textContent = dayKey;
+  var panelHrs = dayData && dayData.h > 0 ? ' &middot; ' + dayData.h.toFixed(1) + ' hrs' : '';
+  panelStats.innerHTML = entries.length + ' entries' + panelHrs + ' &middot; <strong>~$' + (dayData ? dayData.c : 0) + '</strong> estimated cost';
+
+  var html = '';
+  entries.forEach(function(e) {
+    var desc = e[0], ws = e[1], tags = e[2];
+    var wsColors = ['#3b82f6','#10b981','#8b5cf6','#f59e0b','#ef4444','#6b7280'];
+    var wsNames = ['Workstream 1','Workstream 2','Workstream 3','Workstream 4','Workstream 5','Workstream 6'];
+    var color = wsColors[ws] || '#999';
+    var wsName = wsNames[ws] || '';
+    var tagHtml = '';
+    if (tags && tags.indexOf('L') >= 0) tagHtml += '<span class="entry-tag tag-linkedin">LinkedIn</span>';
+    if (tags && tags.indexOf('A') >= 0) tagHtml += '<span class="entry-tag tag-app">App</span>';
+    html += '<div class="entry-item">' +
+      '<div class="entry-dot" style="background:' + color + '" title="' + wsName + '"></div>' +
+      '<div class="entry-text">' +
+        '<div class="entry-desc">' + desc + '</div>' +
+        '<div class="entry-meta">' + tagHtml + '<span style="color:' + color + '">' + wsName + '</span></div>' +
+      '</div></div>';
+  });
+  panelBody.innerHTML = html;
+
+  document.querySelectorAll('.cost-bar-wrap').forEach(function(w) { w.classList.remove('active'); });
+  var activeBar = document.querySelector('.cost-bar-wrap[data-day="' + dayKey + '"]');
+  if (activeBar) activeBar.classList.add('active');
+
+  panel.classList.add('open');
+  overlay.classList.add('open');
+}
+
+function closePanel() {
+  panel.classList.remove('open');
+  overlay.classList.remove('open');
+  document.querySelectorAll('.cost-bar-wrap').forEach(function(w) { w.classList.remove('active'); });
+}
+
+document.getElementById('panel-close').addEventListener('click', closePanel);
+overlay.addEventListener('click', closePanel);
+</script>
+</body>
+</html>
