@@ -63,8 +63,9 @@ Count the total turns across all sessions in the extraction.
 ## Step 3: Draft entries
 
 For each session, in chronological order, read its turns and write session-log
-entries in the standard grammar (see `../session-log-format.md`), at whatever detail
-tier was chosen in Step 2 of `SKILL.md`'s setup:
+entries in the standard grammar (the heading format and fields-by-tier table are in
+`SKILL.md`'s Logging Block), at whatever detail tier was chosen in Step 2 of
+`SKILL.md`'s setup:
 
 - **Group turns into entries the way a live logger would** — several consecutive
   turns that are really one back-and-forth request (a clarifying question and its

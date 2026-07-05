@@ -1,2 +1,14 @@
+# macOS
 .DS_Store
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# Claude Code local settings (per-user)
+.claude/settings.local.json
+
+# Other
 showcase-log/_testing/
+showcase-log/_private/

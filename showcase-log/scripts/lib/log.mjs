@@ -1,6 +1,6 @@
 // log.mjs — shared parsing for session-log.md + archive/*.md, used by
-// decision-digest.mjs, generate-milestones.mjs, and generate-recap.mjs so
-// they can't drift out of sync on how entries/markers are read.
+// decision-digest.mjs and generate-recap.mjs so they can't drift out of sync
+// on how entries/markers are read.
 import fs from 'node:fs';
 import path from 'node:path';
 

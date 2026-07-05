@@ -81,8 +81,6 @@ the project from memory and file timestamps.
 
 - [`SKILL.md`](SKILL.md) — the operating instructions Claude follows (setup steps, entry
   format, on-demand output triggers)
-- [`../session-log-format.md`](../session-log-format.md) — the log's file format, shared
-  with `showcase-project`
 - [`BACKFILL.md`](BACKFILL.md) — how setup reconstructs entries from an existing project's
   transcript history
 - [`MIGRATION.md`](MIGRATION.md) — upgrading a project set up with the pre-2.1 flat file
