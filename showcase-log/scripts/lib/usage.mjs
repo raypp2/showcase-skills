@@ -2,6 +2,11 @@
 // usage-snapshot.mjs, cost-report.mjs, and generate-recap.mjs.
 import fs from 'node:fs';
 
+// The pricing table lives in usage-snapshot.mjs (the only place it's applied),
+// but the as-of date is shared here so every script that surfaces cost can
+// disclose it without duplicating — update this alongside that table.
+export const PRICING_AS_OF = '2026-07';
+
 export function loadUsageRows(P) {
   if (!fs.existsSync(P.USAGE_FILE)) return [];
   const rows = [];

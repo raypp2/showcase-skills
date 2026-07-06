@@ -1,7 +1,7 @@
 ---
 name: showcase-log
 version: 2.0.0
-description: "Preserve what actually happens on a project before it's gone — Claude Code's transcripts are deleted after ~30 days and long sessions get compacted well before that, silently erasing the exact prompts, decisions, and patterns that show how the user really works. This skill turns that history into a permanent structured log (verbatim prompts, decisions, cost) and turns the log into on-demand payoffs: a cost report, a decision digest, and a mobile-friendly interactive recap page. It's the always-on data layer of the showcase family — the same log is what lets other showcase skills (like showcase-project) build deeper, curated demonstrations of the user's work later, instead of reconstructing it from memory. On an existing project it also backfills whatever transcript history is still recoverable, so turning this on late still saves most of what would otherwise be lost. Setup asks no questions by default. Run this at the start of any project — the earlier it's on, the less is lost. Use this skill when the user says 'showcase log', 'start logging', 'turn on the log', 'set up the project log', or runs /showcase-log."
+description: "Preserve what actually happens on a project before it's gone — Claude Code's transcripts are deleted after ~30 days and long sessions get compacted well before that, silently erasing the exact prompts, decisions, and patterns that show how the user really works. This skill turns that history into a permanent structured log (verbatim prompts, decisions, cost) and turns the log into on-demand payoffs: a cost report and a mobile-friendly interactive recap page — the recap is the main way to get a report back, with a section picker (daily activity, cost, milestones, key decisions, plus optional AI-written analysis) so the user chooses what's included each time. It's the always-on data layer of the showcase family — the same log is what lets other showcase skills (like showcase-project) build deeper, curated demonstrations of the user's work later, instead of reconstructing it from memory. On an existing project it also backfills whatever transcript history is still recoverable, so turning this on late still saves most of what would otherwise be lost. Run this at the start of any project — the earlier it's on, the less is lost. Use this skill when the user says 'showcase log', 'start logging', 'turn on the log', 'set up the project log', or runs /showcase-log."
 ---
 
 # Showcase Log Setup (v2)
@@ -20,9 +20,10 @@ it can ever be used.
 
 This skill turns the raw material into something permanent — a structured,
 plain-text log of every interaction (verbatim prompts, decisions, cost) — and then
-turns *that* into things worth having on their own: an instant cost report, a
-decision digest, and a mobile-friendly recap page. The log is the mechanism; the
-payoffs are the point. It's also the foundation the rest of the **showcase** family
+turns *that* into things worth having on their own: an instant cost report and a
+mobile-friendly recap page, which does most of the work of reporting back to the
+user. The log is the mechanism; the payoffs are the point. It's also the foundation
+the rest of the **showcase** family
 builds on: `/showcase-project`'s curated, interview-driven story page can only
 quote real prompts and reconstruct a real timeline if this log was running to
 capture them — without it, that skill is stuck reconstructing history from memory
@@ -49,30 +50,32 @@ session-log/
   archive/*.md          older entries rolled off session-log.md, chunked by date range
   usage/usage.jsonl      exact token usage harvested from Claude Code transcripts
   usage/summary.md        human-readable cost rollup
-  recap.html            generated overview: daily activity, cost, milestones, key decisions
+  YYYY-MM-DD-Recap.html   generated overview: daily activity, cost, milestones, key decisions —
+                            one per generation day, accumulating rather than overwriting
 ```
 
 | Piece | Purpose |
 |---|---|
 | Logging block in `CLAUDE.md` | Claude appends a structured entry to `session-log/session-log.md` after every request, and knows how to trigger the outputs below |
 | `_scripts/backfill-from-history.mjs` | One-time, on first setup: extracts recoverable prompts + timestamps from this project's Claude Code transcripts before they age out, for Claude to turn into entries (see [BACKFILL.md](BACKFILL.md)) |
-| `_scripts/archive-session-log.mjs` | Rolls old entries into `session-log/archive/`; keeps the live file lean |
+| `_scripts/check-log-coverage.mjs` | Audits transcripts against `session-log/` and flags real prompts that never got logged, while there's still time to fix it — runs automatically via hooks, same debounce pattern as the usage snapshot |
+| `_scripts/archive-session-log.mjs` | Rolls old entries into `session-log/archive/`; keeps the live file lean. Runs automatically via hooks (`--auto`, self-gating below ~40 entries) — the ~40-entry rule in the Logging Block is now a same-day backstop, not the primary trigger |
 | `_scripts/usage-snapshot.mjs` | Harvests exact token usage from Claude Code transcripts before the ~30-day transcript cleanup erases them |
 | `_scripts/cost-report.mjs` | Prints cost by model and by time window (this session / 7d / 30d / all-time), in dollars |
-| `_scripts/decision-digest.mjs` | Prints every logged `Key Decisions` bullet, dated — a running engineering-decisions log |
-| `_scripts/generate-recap.mjs` | Writes `session-log/recap.html` — mobile-friendly interactive overview with daily bars, cost tables, milestones, decisions (deterministic), plus placeholder sections for AI analysis (workstreams, patterns, recommendations) |
-| `_scripts/lib/*.mjs` | Shared path/parsing/usage helpers the scripts above import — keeps them from drifting out of sync |
+| `_scripts/generate-recap.mjs` | Writes `session-log/YYYY-MM-DD-Recap.html` (dated to the day it runs) — the main report back to the user: mobile-friendly interactive overview with daily bars, cost tables, milestones, and key decisions (deterministic, and individually optional via a section picker), plus placeholder sections for AI analysis (workstreams, timeline, patterns, findings) |
+| `_scripts/lib/*.mjs` | Shared path/parsing/usage/transcript helpers the scripts above import — keeps them from drifting out of sync |
+| `_scripts/.showcase-log-version` | The skill version these scripts were copied from — the only way to tell an installed copy is behind the current source, since re-running setup is what refreshes it |
 | `assets/recap-template.html` | HTML shell the generator fills in |
-| `assets/recap-sample-ci.html` | Reference sample of a complete recap with all AI sections filled in |
-| Hooks in `.claude/settings.json` | Run the usage snapshot deterministically (SessionStart + Stop) — no model or user cooperation needed |
+| Hooks in `.claude/settings.json` | Run the usage snapshot, archiver, and coverage check deterministically (SessionStart + Stop) — no model or user cooperation needed |
 
 The deterministic base is a **light, mechanical** layer distinct from `/showcase-project`:
-dollars, declared milestones, and logged decisions, assembled by script. There is no
-separate milestone page — milestones are one section within the recap (the section picker
-below lets someone get just that section if that's all they want), so there's exactly one
-generated output to point people at. The recap also supports optional **AI-analyzed
-sections** (workstreams, patterns, recommendations) that Claude fills in after the script
-generates the base — the user picks which sections to include via a section picker.
+daily activity and cost, assembled by script — no narrative writing, no era inference.
+Declared milestones and logged decisions aren't a standalone deterministic section; they
+surface through the AI-authored "Milestones & capabilities timeline" (milestones) and
+remain in the log itself (decisions) rather than getting their own recap section. The
+recap also supports optional **AI-analyzed sections** (workstreams, timeline, patterns,
+findings) that Claude fills in after the script generates the base — the user picks which
+sections to include via a section picker.
 `/showcase-project`'s curated, interview-driven story page is still the right tool when
 someone wants a polished, shareable narrative — the two are complementary, not competing.
 
@@ -154,15 +157,15 @@ opts into (dropping the gitignore line, or committing anyway); it is never the d
 
 **If the directory is already inside a git repository:**
 
-1. Ensure `.gitignore` (create if needed) contains `/session-log/`. Remove any leftover
-   `/session-log.md`, `/session-log-archive/`, `/session-usage/` lines from a prior install
-   — the single folder entry supersedes them.
-2. Untrack anything already committed under the old or new paths — a gitignore rule does
-   not untrack existing files:
-   ```bash
-   git rm -r -q --cached session-log.md session-log-archive session-usage session-log 2>/dev/null || true
-   ```
-   If this untracked anything, tell the user it will show as a deletion in their next commit.
+Ensure `.gitignore` (create if needed) contains `/session-log/`. Remove any leftover
+`/session-log.md`, `/session-log-archive/`, `/session-usage/` lines from a prior install —
+the single folder entry supersedes them.
+
+That's the whole job: make sure a *fresh* setup doesn't start tracking the log. If
+`session-log/` (or its pre-2.1 predecessors) is already committed — the user tracked it on
+purpose, or a prior version of this skill didn't have this rule — leave it alone. Untracking
+files someone already chose to commit isn't this skill's call to make; if they want it
+untracked, that's on them to do.
 
 **If it's not a git repository yet:** there's no `.gitignore` to write, and that's fine — the
 user may well turn logging on before ever running `git init`. Nothing to do here now, but
@@ -180,29 +183,42 @@ files are owned by the skill and refreshed on re-setup):
 - `scripts/lib/*.mjs` → `_scripts/lib/*.mjs`
 - `assets/*-template.html` → `assets/*-template.html`
 
+Then write `_scripts/.showcase-log-version` containing just this skill's `version:` from its
+own frontmatter (e.g. `2.0.0`), overwriting any existing copy. These files are frozen forks
+once copied — a project doesn't pick up later fixes to the skill until `/showcase-log` runs
+again — so this stamp is how anyone (or Claude, in a future session) can tell whether an
+installed copy is behind the skill's current source, instead of having no way to tell at all.
+
 ### Step 8: Install hooks
 
 Merge the following into the project's `.claude/settings.json` (create the file with just
 this content if it doesn't exist). **Merge, never overwrite**: if a `hooks` object or these
-event arrays already exist, append the entries — and skip any that already invoke
-`usage-snapshot.mjs` (don't duplicate on re-setup).
+event arrays already exist, append only the entries that aren't already present — skip any
+command that's already listed for that event (don't duplicate on re-setup).
 
 ```json
 {
   "hooks": {
     "SessionStart": [
-      { "hooks": [{ "type": "command", "command": "node _scripts/usage-snapshot.mjs --auto" }] }
+      { "hooks": [{ "type": "command", "command": "node _scripts/usage-snapshot.mjs --auto" }] },
+      { "hooks": [{ "type": "command", "command": "node _scripts/archive-session-log.mjs --auto" }] },
+      { "hooks": [{ "type": "command", "command": "node _scripts/check-log-coverage.mjs --auto" }] }
     ],
     "Stop": [
-      { "hooks": [{ "type": "command", "command": "node _scripts/usage-snapshot.mjs --auto" }] }
+      { "hooks": [{ "type": "command", "command": "node _scripts/usage-snapshot.mjs --auto" }] },
+      { "hooks": [{ "type": "command", "command": "node _scripts/archive-session-log.mjs --auto" }] },
+      { "hooks": [{ "type": "command", "command": "node _scripts/check-log-coverage.mjs --auto" }] }
     ]
   }
 }
 ```
 
-Why hooks: the harness executes them deterministically, so usage is harvested even if the
-user never thinks about transcript retention. `--auto` self-debounces (exits in ~50ms
-unless the last real snapshot is >24h old), so the per-turn Stop hook is effectively free.
+Why hooks: the harness executes them deterministically, so usage harvesting, archiving, and
+coverage checking all happen even if the user (or the model) never thinks about it. Each
+`--auto` self-debounces (exits in well under 100ms combined unless its own last real check
+is >24h old), so the per-turn Stop hook stays effectively free. This is the same reasoning
+applied three times over: don't trust an instruction alone for anything where silently
+skipping it would be a real, permanent loss.
 
 ### Step 9: Initial snapshot
 
@@ -250,8 +266,8 @@ start and end times. Never estimate times from memory, and never number entries.
 
 Heading: `### YYYY-MM-DD HH:MM–HH:MM — Short description`
 
-Fields by tier — lite: Prompt, Context, Outcome. standard: + Actions, Key Decisions,
-Errors & Resolution, Model. deep: + Sources, Approach, Verification. Omit any field with
+Fields by tier — lite: Prompt, Context, Outcome, Model. standard: + Actions, Key Decisions,
+Errors & Resolution. deep: + Sources, Approach, Verification. Omit any field with
 nothing to say, except Prompt (always present).
 
     ### 2026-07-02 14:32–14:47 — Dashboard build from tracker data
@@ -290,9 +306,11 @@ nothing to say, except Prompt (always present).
   `--- session YYYY-MM-DD HH:MM (model-id) ---`
 - If the user declares a milestone, append: `> **Milestone (YYYY-MM-DD):** [their words]`.
   Never invent milestones yourself — phases are only visible in retrospect.
-- When the live log exceeds ~40 entries, run `node _scripts/archive-session-log.mjs`
-  (rolls old entries into `session-log/archive/` and refreshes the usage snapshot), then
-  keep appending as normal.
+- Archiving now happens automatically via hooks (rolls old entries into
+  `session-log/archive/` once the live log passes ~40, refreshes the usage snapshot). The
+  hook debounces daily, so on an unusually heavy day you can still run
+  `node _scripts/archive-session-log.mjs` yourself if the live file is visibly getting long
+  — it's a same-day backstop, not something you need to track normally.
 - **`session-log/` is private by default** — prompts are verbatim and may contain anything
   the user typed. If this project is not a git repository yet and one gets initialized
   later (`git init`, cloning turns it into one, etc.), add `/session-log/` to `.gitignore`
@@ -302,17 +320,34 @@ nothing to say, except Prompt (always present).
 
 Trigger these from natural phrasing — don't wait for the exact command name:
 
-- **Cost / spend / token usage asked about** → run `node _scripts/cost-report.mjs`, relay
-  the output conversationally (lead with the dollar total, not the table).
-- **"Make a recap" / "give me an overview" / "light story page"** → follow the
-  **Recap generation flow** below.
-- **"Milestone timeline" / "show me the milestones"** → follow the **Recap generation
-  flow**, defaulting the section picker to just the Milestones section.
-- **"What decisions did I make" / "decision log" / "why did I do X"** → run
-  `node _scripts/decision-digest.mjs` (add `--days N` if they scoped it to a timeframe —
-  "this week," "recently," etc.), relay conversationally.
+- **Cost / spend / token usage asked about** → run `node _scripts/usage-snapshot.mjs` (no
+  `--auto` — this is the one time a fresh harvest matters more than the 24h debounce, so
+  today's spend isn't reported stale), then `node _scripts/cost-report.mjs`, relay the
+  output conversationally (lead with the dollar total, not the table).
+- **"Make a recap" / "give me an overview"** → follow [RECAP.md](RECAP.md), which ends by
+  mentioning that dollar figures can be swapped out if wanted — never build that variant
+  unless asked.
+- **"Milestone timeline" / "show me the milestones"** → follow [RECAP.md](RECAP.md),
+  defaulting the section picker to just the Milestones & capabilities timeline section.
+- **"Take out the dollar amounts" / "swap cost for hours" / "I don't want to show what this
+  cost"** → follow RECAP.md's "Cost-redacted version" section against that day's already-
+  generated private recap. This is specifically about removing the dollar figures — don't
+  infer it from a generic "make this shareable" or "something I can send someone" ask, which
+  could mean all kinds of things (trimming prompts, dropping findings, nothing at all) that
+  have nothing to do with cost.
+- **"What decisions did I make" / "decision log" / "why did I do X"** → there's no
+  dedicated recap section for this — read `session-log/session-log.md` (and `archive/` if
+  needed) directly for entries with a Key Decisions field and relay them conversationally.
 - **"Change detail level" / "log lighter/deeper" / "log less/more"** → edit the
   `Detail tier:` line above to the requested tier (lite/standard/deep). Confirm briefly.
+- **"Did we miss anything" / "check the log for gaps" / "is the log complete"** → run
+  `node _scripts/check-log-coverage.mjs --report`, relay what it found. If it flags real
+  gaps, offer to draft entries for them now (same format as any other logged request) —
+  don't wait for a second ask.
+- **If a Stop/SessionStart hook's output mentions a coverage gap** (the `⚠
+  check-log-coverage:` line, or `session-log/coverage.md` exists), mention it to the user
+  once, briefly, at a natural point — don't wait for them to ask. This is the one hook
+  output worth surfacing unprompted; the usage/archive hooks are silent on purpose.
 <!-- SHOWCASE-LOGGING-END -->
 ```
 
@@ -338,18 +373,25 @@ lives in the `showcase-log` skill; you don't maintain any of this by hand.
 | `session-log.md` | The live log — one entry per request, newest at the bottom. |
 | `archive/` | Older entries rolled off `session-log.md` to keep it lean. |
 | `usage/` | Exact token usage harvested from Claude Code transcripts (`usage.jsonl`) plus a readable `summary.md`. |
-| `recap.html` | Generated overview page: daily activity bars, cost tables, milestones, decisions, and optional AI-analyzed sections (workstreams, patterns, recommendations). Open in a browser — works on mobile too. |
+| `YYYY-MM-DD-Recap.html` | Generated overview page — the main report back to you. Open in a browser (works on mobile too). One file per day you ask for a recap; asking again later the same day overwrites that day's file. |
 
-`recap.html` is regenerated from scratch each time — treat it as a disposable view, not
-something to hand-edit.
+Each recap is built from a section picker, so it's a different report each time depending
+on what you ask for:
+
+- **Daily activity, cost & time** — always available, instant, deterministic.
+- **Workstreams, a milestones/capabilities timeline, how you use Claude, findings ranked by value** — optional, AI-written, Claude reads the log and drafts these on request.
+
+Each dated recap file is regenerated from scratch when you ask for one — treat it as a
+disposable snapshot, not something to hand-edit. Older recaps stay put once a new day's
+file is written; nothing deletes them automatically.
 
 ## How to use it
 
 Just ask Claude in plain language — no commands to memorize:
 
 - **"What did this cost so far?"** → a cost breakdown by model and time window.
-- **"Make a recap"** → asks which sections to include, generates `recap.html`, and optionally fills in AI analysis sections. Just want the milestones? Say so and it'll build a recap with only that section.
-- **"What decisions did I make?" / "why did we do X?"** → a dated digest of logged decisions.
+- **"Make a recap"** → asks which sections to include (see the list above), generates today's `YYYY-MM-DD-Recap.html`. Just want the milestones timeline? Say so and it'll build a recap with only that section.
+- **"What decisions did I make?" / "why did we do X?"** → read `session-log/session-log.md` (and `archive/`) directly and answer conversationally — there's no dedicated recap section for this.
 - **"Log lighter" / "log deeper"** → change how much detail each entry captures.
 - **Declare a milestone** — say something like *"milestone: shipped the v1 API"* and Claude
   records it so it shows up in the recap.
@@ -371,98 +413,16 @@ Costs shown are API-equivalent value at list prices, not necessarily what you we
   wherever it appears in the transcript being mined, not just in the live conversation.
 - Never modify the user's global `~/.claude/settings.json` — hooks go in the project's `.claude/settings.json` only.
 - Costs shown by any of these outputs are API-equivalent value at list prices, not billed spend — say so if the user asks about the numbers.
-- `recap.html` is fully regenerated on every run (never hand-edited, never diffed/merged) — treat it as a disposable view over `session-log/`, not a second source of truth.
+- Each recap is written to `session-log/YYYY-MM-DD-Recap.html`, dated to the day it's
+  generated (never hand-edited, never diffed/merged) — treat each one as a disposable
+  snapshot over `session-log/`, not a second source of truth. Regenerating later the same
+  day overwrites that day's file; a different day produces a new file alongside the old
+  ones.
 
----
+## Recap Generation
 
-## Recap Generation Flow
+Building a recap (section picker, base generation, AI-authored sections,
+delivery) is on-demand and substantial enough to live on its own — follow
+[RECAP.md](RECAP.md) in full when a recap is actually requested, rather than carrying its
+detail in every session's context.
 
-The recap page (`session-log/recap.html`) has two layers — a **deterministic base** generated
-by `generate-recap.mjs`, and **AI-analyzed sections** that Claude fills in afterwards. The
-page is mobile-friendly, renders without JavaScript (charts pre-rendered as static HTML), and
-uses JS only for interactive enhancements (tooltips, slide-out panel, hover line).
-
-A sample recap is included at `assets/recap-sample-ci.html` as a reference for the final
-output quality.
-
-### Step 1: Section picker
-
-When the user asks "make a recap" (or equivalent), ask via AskUserQuestion — header
-"Recap sections", question "Which sections should the recap include?", multi-select:
-
-1. **Daily activity** (deterministic) — cost bars per day, tap to see entries
-2. **Cost & time** (deterministic) — cost by model and time window tables
-3. **Milestones** (deterministic) — condensed milestone list
-4. **Key decisions** (deterministic) — recent logged decisions
-5. **Workstreams** (AI) — swimlane chart of classified activity threads
-6. **Milestones & capabilities timeline** (AI) — dual timeline with milestones and capabilities
-7. **How you use Claude** (AI) — patterns in how the user works with Claude
-8. **Recommendations** (AI) — forward-looking suggestions
-
-Default: all selected. The deterministic sections are always safe to include. The AI sections
-require Claude to read the log and write analysis.
-
-### Step 2: Generate the base
-
-Run `node _scripts/generate-recap.mjs`. This creates `session-log/recap.html` with:
-- All deterministic sections filled in (daily bars, cost tables, milestones, decisions)
-- AI sections showing placeholder text ("This section is generated by Claude…")
-- Pre-rendered static HTML for all charts (works in viewers that don't execute JS)
-- Mobile-responsive CSS (breakpoints at 680px and 400px)
-- Interactive JS for tooltips, side panel, and swimlane hover (progressive enhancement)
-
-### Step 3: Fill AI sections (if selected)
-
-For each AI section the user selected, read the log entries and write the content directly
-into `recap.html`, replacing the placeholder `<div>`. Follow these patterns:
-
-#### Workstreams
-
-1. Read all log entries. Auto-classify each into workstreams by analyzing the heading and
-   content. Each workstream gets a name, color, and description.
-2. **First time generating for this project:** present the classified workstreams to the user
-   and ask them to validate. "I classified your work into these N workstreams — does this
-   look right? Any to rename, merge, or split?" Adjust based on feedback.
-3. On subsequent generations, reuse the established workstream classification (store it as a
-   comment in the recap or in a `.workstreams.json` file in `session-log/`).
-4. Generate the workstreams section HTML:
-   - Legend with color swatches
-   - Swimlane rows with `.ws-row`, `.ws-label`, `.ws-track`, `.ws-bar` elements
-   - Positioned bars computed from entry dates (left % and width % relative to project span)
-   - Opacity scaled by activity density
-   - Click zones as `<a>` links to day panels
-   - Hover line elements
-   - Description list with name, narrative, and cost per workstream
-
-Colors to use: `#3b82f6`, `#10b981`, `#8b5cf6`, `#f59e0b`, `#ef4444`, `#6b7280` (extend
-as needed for more workstreams).
-
-#### Milestones & capabilities timeline
-
-Generate a dual timeline using `.tl-row` structure:
-- Left column: milestone cards (amber: `#fde68a`/`#fffbeb` border/bg)
-- Center: date badges and connectors
-- Right column: capability cards (purple: `#c4b5fd`/`#f5f3ff` border/bg)
-- Use gap rows with dashed connectors for periods without events
-
-#### How you use Claude (patterns)
-
-Analyze the log for recurring patterns in how the user works with Claude. Each pattern gets
-a `.pattern-block` with a colored `.pattern-tag` and a narrative paragraph. Tags:
-- `.tag-dynamics` (purple): collaboration patterns
-- `.tag-forward` (green): emerging practices
-- `.tag-optimize` (pink): optimization opportunities
-
-#### Recommendations
-
-Write forward-looking suggestions based on what the log reveals. Group into blocks with
-`.pattern-tag` labels. Include project direction and skill/automation candidates.
-
-### Step 4: Remove unselected sections
-
-For any section the user didn't select, remove the entire `<section>` element from the HTML
-(find by `data-section` attribute). Don't leave empty sections.
-
-### Step 5: Deliver
-
-Tell the user where `session-log/recap.html` is and offer to open it.

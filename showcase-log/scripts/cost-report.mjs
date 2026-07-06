@@ -15,7 +15,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { resolvePaths } from './lib/paths.mjs';
-import { loadUsageRows, localDay, fmt, money, windowTotal } from './lib/usage.mjs';
+import { loadUsageRows, localDay, fmt, money, windowTotal, PRICING_AS_OF } from './lib/usage.mjs';
 
 const argv = process.argv.slice(2);
 const opt = (name) => {
@@ -46,7 +46,7 @@ for (const r of rows) {
 }
 const modelRows = [...byModel.entries()].sort((a, b) => b[1].cost - a[1].cost);
 
-console.log(`${money(total.cost)} total (API-equivalent) across ${fmt(total.msgs)} messages, ${firstDay} – ${lastDay}.`);
+console.log(`${money(total.cost)} total (API-equivalent, list prices as of ${PRICING_AS_OF}) across ${fmt(total.msgs)} messages, ${firstDay} – ${lastDay}.`);
 for (const [model, a] of modelRows) {
   const pct = total.cost > 0 ? Math.round((a.cost / total.cost) * 100) : 0;
   console.log(`  ${model.padEnd(20)} ${money(a.cost).padStart(10)}  (${pct}%)`);

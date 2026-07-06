@@ -29,16 +29,18 @@
 //   summary.md     per-day × per-model rollup, regenerated every run.
 //   .state.json    per-file mtimes + last-run stamp (incremental + debounce).
 //
-// COST MODEL: API list prices (as of 2026-07), USD per 1M tokens; cache write
-// billed at 1.25× input rate, cache read at 0.1× input rate. This is
-// "API-equivalent value" — what the usage would cost at list rates — NOT what
-// a subscription user was billed. For a quick answer, run cost-report.mjs.
+// COST MODEL: API list prices (as-of date in PRICING_AS_OF below), USD per 1M
+// tokens; cache write billed at 1.25× input rate, cache read at 0.1× input
+// rate. This is "API-equivalent value" — what the usage would cost at list
+// rates — NOT what a subscription user was billed. For a quick answer, run
+// cost-report.mjs.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { resolvePaths } from './lib/paths.mjs';
+import { localDay, fmt, money, PRICING_AS_OF } from './lib/usage.mjs';
 
 const DEBOUNCE_MS = 24 * 60 * 60 * 1000; // --auto: do real work at most daily
 
@@ -160,16 +162,6 @@ if (fs.existsSync(TRANSCRIPT_DIR)) {
 rows.sort((a, b) => String(a.ts).localeCompare(String(b.ts)));
 
 // --- summarize ---
-const localDay = (ts) => {
-  if (!ts) return 'unknown';
-  const d = new Date(ts);
-  if (Number.isNaN(d.getTime())) return 'unknown';
-  const p = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-};
-const fmt = (n) => n.toLocaleString('en-US');
-const money = (n) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
 function buildSummary() {
   const byDay = new Map(); // day -> model -> agg
   const byModel = new Map();
@@ -198,8 +190,10 @@ function buildSummary() {
   lines.push('`node _scripts/cost-report.mjs`.');
   lines.push('');
   lines.push(`Generated ${new Date().toISOString()} from ${fmt(rows.length)} assistant messages.`);
-  lines.push('Costs are **API-equivalent value at list prices** (see pricing table in `_scripts/usage-snapshot.mjs`),');
-  lines.push('not billed spend. Cache write billed at 1.25× input rate, cache read at 0.1×.');
+  lines.push(`Costs are **API-equivalent value at list prices as of ${PRICING_AS_OF}** (see pricing`);
+  lines.push('table in `_scripts/usage-snapshot.mjs`), not billed spend. Cache write billed at 1.25×');
+  lines.push('input rate, cache read at 0.1×. Prices drift over time — treat older projects\' totals');
+  lines.push('as directionally right, not exact at today\'s rates.');
   lines.push('');
   lines.push('## Totals by model');
   lines.push('');

@@ -17,7 +17,9 @@
 // it does not decide entry boundaries, write Outcome/Key Decisions, or infer
 // which turns belong together. Claude reads the JSON this writes and drafts
 // the actual session-log.md entries (see ../BACKFILL.md) — the same split as
-// generate-recap.mjs's deterministic base + Claude-authored AI sections.
+// generate-recap.mjs's deterministic base + Claude-authored AI sections. The
+// transcript-parsing itself lives in lib/transcripts.mjs, shared with
+// check-log-coverage.mjs so both agree on what counts as "a real prompt."
 //
 // USAGE:
 //   node _scripts/backfill-from-history.mjs             # write extraction
@@ -31,11 +33,11 @@
 // turn. Scratch input, not part of the log — delete it once entries are
 // drafted (see BACKFILL.md).
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { resolvePaths } from './lib/paths.mjs';
+import { transcriptDirFor, extractAllSessions } from './lib/transcripts.mjs';
 
 const argv = process.argv.slice(2);
 const flag = (name) => argv.includes(name);
@@ -47,71 +49,9 @@ const REPORT = flag('--report');
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const P = resolvePaths(opt('--root') || path.resolve(SCRIPT_DIR, '..'));
-// Claude Code flattens the project path into a folder name by replacing every
-// non-alphanumeric character with '-' (same convention usage-snapshot.mjs uses).
-const flattened = P.ROOT.replace(/[^a-zA-Z0-9]/g, '-');
-const TRANSCRIPT_DIR = path.resolve(
-  opt('--transcripts') || path.join(os.homedir(), '.claude', 'projects', flattened),
-);
+const TRANSCRIPT_DIR = path.resolve(opt('--transcripts') || transcriptDirFor(P.ROOT));
 
-// A "user" turn whose content is a plain string is a real human prompt. When
-// content is an array instead, it's a tool_result being fed back in — a
-// synthetic continuation, not something the user said. Among string turns,
-// a handful of prefixes mark slash-command echoes and session-resume
-// summaries rather than actual prompts.
-const JUNK_PREFIXES = [
-  '<command-name>',
-  '<local-command-caveat>',
-  '<local-command-stdout>',
-  'This session is being continued from a previous conversation',
-];
-const isJunk = (text) => JUNK_PREFIXES.some((p) => text.startsWith(p));
-
-const FILE_EDIT_TOOLS = new Set(['Edit', 'Write', 'NotebookEdit']);
-
-function extractSession(filePath) {
-  const turns = [];
-  let currentTurn = null;
-  for (const line of fs.readFileSync(filePath, 'utf8').split('\n')) {
-    if (!line.trim()) continue;
-    let rec;
-    try { rec = JSON.parse(line); } catch { continue; }
-    if (rec.type === 'user') {
-      const content = rec.message && rec.message.content;
-      if (typeof content === 'string' && content.trim() && !isJunk(content)) {
-        currentTurn = { ts: rec.timestamp || null, text: content, files: [] };
-        turns.push(currentTurn);
-      }
-      continue;
-    }
-    if (rec.type === 'assistant' && currentTurn) {
-      const blocks = (rec.message && rec.message.content) || [];
-      if (Array.isArray(blocks)) {
-        for (const b of blocks) {
-          if (b.type === 'tool_use' && FILE_EDIT_TOOLS.has(b.name) && b.input && b.input.file_path
-            && !currentTurn.files.includes(b.input.file_path)) {
-            currentTurn.files.push(b.input.file_path);
-          }
-        }
-      }
-    }
-  }
-  return turns;
-}
-
-let sessions = [];
-if (fs.existsSync(TRANSCRIPT_DIR)) {
-  for (const name of fs.readdirSync(TRANSCRIPT_DIR)) {
-    if (!name.endsWith('.jsonl')) continue;
-    const fp = path.join(TRANSCRIPT_DIR, name);
-    const turns = extractSession(fp);
-    if (turns.length) {
-      sessions.push({ sessionId: path.basename(name, '.jsonl'), turns });
-    }
-  }
-}
-sessions.sort((a, b) => String(a.turns[0]?.ts || '').localeCompare(String(b.turns[0]?.ts || '')));
-
+const sessions = extractAllSessions(TRANSCRIPT_DIR);
 const totalTurns = sessions.reduce((n, s) => n + s.turns.length, 0);
 
 if (REPORT) {

@@ -1,13 +1,12 @@
 // log.mjs — shared parsing for session-log.md + archive/*.md, used by
-// decision-digest.mjs and generate-recap.mjs so they can't drift out of sync
-// on how entries/markers are read.
+// generate-recap.mjs and archive-session-log.mjs to read/split entries.
 import fs from 'node:fs';
 import path from 'node:path';
 
 // v2 date-ID headings (`### YYYY-MM-DD HH:MM–HH:MM — desc`) and legacy v1
 // numbered headings (`### #N — desc`, optionally with a date backfilled in,
 // `### #N — YYYY-MM-DD [HH:MM–HH:MM] desc`) are both accepted.
-const ENTRY_RE = /^### (\d{4}-\d{2}-\d{2}|#\d+)\b/;
+export const ENTRY_RE = /^### (\d{4}-\d{2}-\d{2}|#\d+)\b/;
 const DATE_RE = /(\d{4}-\d{2}-\d{2})/;
 const TIME_RE = /(\d{2}:\d{2})\s*[–-]\s*(\d{2}:\d{2})/;
 const FIELD_RE = /^\*\*[A-Za-z][A-Za-z &]*:\*\*/;
@@ -52,9 +51,40 @@ function extractField(raw, fieldName) {
   return text ? [text] : [];
 }
 
+/** Extract the Prompt field's blockquote(s) as an array of turn texts — one
+ * per `>` blockquote, in the order they appear (multi-turn entries get one
+ * blockquote per user turn, per the Logging Block's rule). Leading `> `
+ * markers are stripped; a blank line ends the current blockquote so a
+ * following one starts fresh rather than merging into it. A handful of
+ * older/legacy entries put the text inline on the `**Prompt:**` line itself
+ * instead of a blockquote below it — that inline tail counts as a block too. */
+function extractPromptBlocks(raw) {
+  const lines = raw.split('\n');
+  const startRe = /^\*\*Prompt:\*\*/;
+  const startIdx = lines.findIndex((l) => startRe.test(l.trim()));
+  if (startIdx === -1) return [];
+  const blocks = [];
+  const inlineTail = lines[startIdx].trim().replace(startRe, '').trim();
+  if (inlineTail) blocks.push([inlineTail]);
+  let cur = null;
+  for (let i = startIdx + 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (FIELD_RE.test(line.trim())) break;
+    if (line.trim().startsWith('>')) {
+      if (cur === null) { cur = []; blocks.push(cur); }
+      cur.push(line.replace(/^\s*>\s?/, ''));
+    } else if (line.trim() === '') {
+      cur = null;
+    } else if (cur !== null) {
+      cur.push(line);
+    }
+  }
+  return blocks.map((b) => b.join('\n').trim()).filter(Boolean);
+}
+
 /** Parse the full corpus (archive chunks, oldest first, then the live file)
  * into ordered entries. Each entry: { position, raw, heading, date, start,
- * end, keyDecisions[], outcome }. */
+ * end, prompts[], keyDecisions[], outcome }. */
 export function loadEntries(P) {
   const entries = [];
   let position = 0;
@@ -75,6 +105,7 @@ export function loadEntries(P) {
         date: dateMatch ? dateMatch[1] : null,
         start: timeMatch ? timeMatch[1] : null,
         end: timeMatch ? timeMatch[2] : null,
+        prompts: extractPromptBlocks(raw),
         keyDecisions: extractField(raw, 'Key Decisions'),
         outcome: extractField(raw, 'Outcome')[0] || null,
       });
