@@ -122,6 +122,46 @@ test('--share writes a separate -Shared.html file, leaving the private recap unt
   }
 });
 
+test('entries with no date at all get a diagnostic empty state, not a bare "nothing here" message', () => {
+  const root = makeScratchDir('recap-undated-diagnostic');
+  try {
+    writeLog(root, [
+      '# Project Log', '', '---', '', '## Interaction Log', '',
+      '### #1 — [09:00–09:15] Legacy entry', '', '**Prompt:**', '> a legacy prompt with no date', '',
+    ].join('\n'));
+    execFileSync(process.execPath, [SCRIPT, '--root', root]);
+    const html = readRecapHtml(root);
+    assert.ok(html.includes('backfill dates'), 'empty state should point at the fix, since entries exist but none are dated');
+  } finally {
+    cleanup(root);
+  }
+});
+
+test('cost-by-window table labels the first row "Today", reflecting only the latest calendar day', () => {
+  const root = makeScratchDir('recap-today-window');
+  try {
+    writeLog(root, [
+      '# Project Log', '', '---', '', '## Interaction Log', '',
+      '### 2026-04-16 09:00–09:30 — Old entry', '', '**Prompt:**', '> old work', '',
+      '### 2026-07-06 09:00–09:30 — Latest entry', '', '**Prompt:**', '> today\'s work', '',
+    ].join('\n'));
+    fs.mkdirSync(path.join(root, 'session-log', 'usage'), { recursive: true });
+    fs.writeFileSync(
+      path.join(root, 'session-log', 'usage', 'usage.jsonl'),
+      [
+        JSON.stringify({ id: 'm1', ts: '2026-04-16T10:00:00.000Z', session: 's1', model: 'claude-sonnet-5', input: 1, output: 1, cache_write: 0, cache_read: 0, cost_usd: 100 }),
+        JSON.stringify({ id: 'm2', ts: '2026-07-06T09:00:00.000Z', session: 's1', model: 'claude-sonnet-5', input: 1, output: 1, cache_write: 0, cache_read: 0, cost_usd: 5 }),
+      ].join('\n'),
+    );
+    execFileSync(process.execPath, [SCRIPT, '--root', root]);
+    const html = readRecapHtml(root);
+    assert.ok(html.includes('>Today<'), 'window table should label the first row "Today"');
+    assert.ok(!html.includes('This session'));
+  } finally {
+    cleanup(root);
+  }
+});
+
 test('--share replaces dollar figures with time/percentage and embeds no cost data at all', () => {
   const root = makeScratchDir('recap-share-no-cost-data');
   try {

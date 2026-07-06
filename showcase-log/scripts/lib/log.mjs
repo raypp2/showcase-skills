@@ -13,7 +13,9 @@ const FIELD_RE = /^\*\*[A-Za-z][A-Za-z &]*:\*\*/;
 const MILESTONE_RE = /^>?\s*\*\*Milestone \((\d{4}-\d{2}-\d{2})\):\*\*\s*(.*)$/;
 const SESSION_RE = /^--- session (\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}) \(([^)]+)\) ---$/;
 
-function corpusFiles(P) {
+// Exported so enrich-log-dates.mjs can walk the same archive+live file order
+// when rewriting headings in place, instead of re-deriving it independently.
+export function corpusFiles(P) {
   const files = [];
   if (fs.existsSync(P.ARCHIVE_DIR)) {
     files.push(...fs.readdirSync(P.ARCHIVE_DIR).filter((f) => f.endsWith('.md')).sort()
@@ -57,8 +59,11 @@ function extractField(raw, fieldName) {
  * markers are stripped; a blank line ends the current blockquote so a
  * following one starts fresh rather than merging into it. A handful of
  * older/legacy entries put the text inline on the `**Prompt:**` line itself
- * instead of a blockquote below it — that inline tail counts as a block too. */
-function extractPromptBlocks(raw) {
+ * instead of a blockquote below it — that inline tail counts as a block too.
+ * Exported for enrich-log-dates.mjs, which needs the same verbatim prompt
+ * text (specifically the first block — the initial ask) to match an undated
+ * entry against a transcript turn. */
+export function extractPromptBlocks(raw) {
   const lines = raw.split('\n');
   const startRe = /^\*\*Prompt:\*\*/;
   const startIdx = lines.findIndex((l) => startRe.test(l.trim()));

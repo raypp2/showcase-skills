@@ -1,7 +1,8 @@
 ---
 name: showcase-log
-version: 2.0.0
-description: "Preserve what actually happens on a project before it's gone — Claude Code's transcripts are deleted after ~30 days and long sessions get compacted well before that, silently erasing the exact prompts, decisions, and patterns that show how the user really works. This skill turns that history into a permanent structured log (verbatim prompts, decisions, cost) and turns the log into on-demand payoffs: a cost report and a mobile-friendly interactive recap page — the recap is the main way to get a report back, with a section picker (daily activity, cost, milestones, key decisions, plus optional AI-written analysis) so the user chooses what's included each time. It's the always-on data layer of the showcase family — the same log is what lets other showcase skills (like showcase-project) build deeper, curated demonstrations of the user's work later, instead of reconstructing it from memory. On an existing project it also backfills whatever transcript history is still recoverable, so turning this on late still saves most of what would otherwise be lost. Run this at the start of any project — the earlier it's on, the less is lost. Use this skill when the user says 'showcase log', 'start logging', 'turn on the log', 'set up the project log', or runs /showcase-log."
+description: "Preserve what actually happens on a project before it's gone — Claude Code deletes transcripts after ~30 days and compacts long sessions before that, erasing the prompts and decisions that show how the user really works. This skill turns that history into a permanent structured log (verbatim prompts, decisions, cost) and turns it into on-demand payoffs: a cost report and a mobile-friendly interactive recap page with a section picker (daily activity, cost, milestones, decisions, optional AI analysis). It's the always-on data layer for the showcase family — other showcase skills (like showcase-project) build from this log instead of reconstructing history from memory. On an existing project it also backfills recoverable transcript history, so turning it on late still recovers most of it. Run this at the start of any project — the earlier it's on, the less is lost. Use this skill when the user says 'showcase log', 'start logging', 'turn on the log', 'set up the project log', or runs /showcase-log."
+metadata:
+  version: "2.0.0"
 ---
 
 # Showcase Log Setup (v2)
@@ -58,10 +59,11 @@ session-log/
 |---|---|
 | Logging block in `CLAUDE.md` | Claude appends a structured entry to `session-log/session-log.md` after every request, and knows how to trigger the outputs below |
 | `_scripts/backfill-from-history.mjs` | One-time, on first setup: extracts recoverable prompts + timestamps from this project's Claude Code transcripts before they age out, for Claude to turn into entries (see [BACKFILL.md](BACKFILL.md)) |
+| `_scripts/enrich-log-dates.mjs` | Adds real dates to entries that already exist but have none — a pre-v2 numbered log (`### #N — ...`) that Step 1 just migrated into place — by matching each entry's verbatim prompt against transcript turns (see [BACKFILL.md](BACKFILL.md#enriching-an-already-migrated-log)) |
 | `_scripts/check-log-coverage.mjs` | Audits transcripts against `session-log/` and flags real prompts that never got logged, while there's still time to fix it — runs automatically via hooks, same debounce pattern as the usage snapshot |
 | `_scripts/archive-session-log.mjs` | Rolls old entries into `session-log/archive/`; keeps the live file lean. Runs automatically via hooks (`--auto`, self-gating below ~40 entries) — the ~40-entry rule in the Logging Block is now a same-day backstop, not the primary trigger |
 | `_scripts/usage-snapshot.mjs` | Harvests exact token usage from Claude Code transcripts before the ~30-day transcript cleanup erases them |
-| `_scripts/cost-report.mjs` | Prints cost by model and by time window (this session / 7d / 30d / all-time), in dollars |
+| `_scripts/cost-report.mjs` | Prints cost by model and by time window (today / 7d / 30d / all-time), in dollars |
 | `_scripts/generate-recap.mjs` | Writes `session-log/YYYY-MM-DD-Recap.html` (dated to the day it runs) — the main report back to the user: mobile-friendly interactive overview with daily bars, cost tables, milestones, and key decisions (deterministic, and individually optional via a section picker), plus placeholder sections for AI analysis (workstreams, timeline, patterns, findings) |
 | `_scripts/lib/*.mjs` | Shared path/parsing/usage/transcript helpers the scripts above import — keeps them from drifting out of sync |
 | `_scripts/.showcase-log-version` | The skill version these scripts were copied from — the only way to tell an installed copy is behind the current source, since re-running setup is what refreshes it |
@@ -112,19 +114,38 @@ Logging Block's on-demand outputs.
 
 In the block, set the `Detail tier:` line to the chosen tier.
 
-### Step 4: Backfill from history, if this is an existing project
+### Step 4: Backfill or enrich from history, if this is an existing project
 
-**Skip if `session-log/session-log.md` already exists** (a re-run or upgrade — nothing to
-backfill, the log is already live). Otherwise check for recoverable history: does
-`~/.claude/projects/<flattened-path>/` exist and contain at least one real user turn, where
-`<flattened-path>` is the project root with every non-alphanumeric character replaced by
-`-`? If not — brand-new project, no history — skip to Step 5.
+Two independent checks, both automatic — same reasoning as Step 1's migration, no question
+asked unless BACKFILL.md's scale threshold applies:
 
-If recoverable history exists, follow [BACKFILL.md](BACKFILL.md): run
-`scripts/backfill-from-history.mjs` to extract verbatim prompts + timestamps, then draft them
-into `session-log/session-log.md` at the tier chosen in Step 2. This is automatic, same as
-Step 1's migration — the one exception is an unusually large history (BACKFILL.md's
-threshold), which gets a quick scoping question before drafting hundreds of entries.
+**A. No `session-log/session-log.md` yet** (brand-new project, or nothing for Step 1 to
+migrate). Check for recoverable history: does `~/.claude/projects/<flattened-path>/` exist
+and contain at least one real user turn, where `<flattened-path>` is the project root with
+every non-alphanumeric character replaced by `-`? If not, skip to Step 5. If so, follow
+[BACKFILL.md](BACKFILL.md): run `scripts/backfill-from-history.mjs` to extract verbatim
+prompts + timestamps, then draft them into `session-log/session-log.md` at the tier chosen
+in Step 2.
+
+**B. `session-log/session-log.md` already exists.** Most of the time this means a re-run or
+upgrade with nothing to do — but it's also what a v1-format log looks like right after
+Step 1 just migrated it into place, and that case has content but needs dates. Run
+`node scripts/enrich-log-dates.mjs --report` (from the skill directory, same as backfill)
+to check:
+- **Reports zero undated entries** — nothing to do, skip to Step 5.
+- **Reports undated entries and at least one recoverable transcript turn** — run
+  `node scripts/enrich-log-dates.mjs` for real. It matches each undated entry's verbatim
+  prompt against transcript turns and stamps a real date into its heading in place, without
+  touching anything else about the entry — see
+  [BACKFILL.md](BACKFILL.md#enriching-an-already-migrated-log).
+- **Reports undated entries but no recoverable transcript turns** (history already aged
+  out) — don't fabricate dates. Leave the entries as they are, but say so in the Step 10
+  report so the user knows why Daily Activity will stay empty for them until more history
+  exists.
+
+Skipping this check is the exact bug this step exists to close: an entry with content but no
+date silently breaks every deterministic recap feature keyed on date (daily activity chart,
+day drill-downs, the workstreams gantt), with nothing in setup's own output to say so.
 
 ### Step 5: session-log/session-log.md and session-log/README.md
 
@@ -177,14 +198,15 @@ re-run this skill.
 
 Copy from this skill's directory into the project, overwriting existing copies (these
 files are owned by the skill and refreshed on re-setup):
-- `scripts/*.mjs` → `_scripts/*.mjs` (includes `backfill-from-history.mjs` — Step 4 ran it
-  directly from the skill directory before this point, so this is just catching the
-  project's own copy up for any future re-run)
+- `scripts/*.mjs` → `_scripts/*.mjs` (includes `backfill-from-history.mjs` and
+  `enrich-log-dates.mjs` — Step 4 ran whichever of these applied directly from the skill
+  directory before this point, so this is just catching the project's own copy up for any
+  future re-run)
 - `scripts/lib/*.mjs` → `_scripts/lib/*.mjs`
 - `assets/*-template.html` → `assets/*-template.html`
 
-Then write `_scripts/.showcase-log-version` containing just this skill's `version:` from its
-own frontmatter (e.g. `2.0.0`), overwriting any existing copy. These files are frozen forks
+Then write `_scripts/.showcase-log-version` containing just this skill's `metadata.version`
+from its own frontmatter (e.g. `2.0.0`), overwriting any existing copy. These files are frozen forks
 once copied — a project doesn't pick up later fixes to the skill until `/showcase-log` runs
 again — so this stamp is how anyone (or Claude, in a future session) can tell whether an
 installed copy is behind the skill's current source, instead of having no way to tell at all.
@@ -239,9 +261,12 @@ Logging on for this project (<tier> detail).
 
 This is the entire report — no checklist, no file paths. If something in Steps 1–9 needed
 migration or fixing (legacy layout moved, an already-tracked file untracked, history
-backfilled), fold one short clause into this message rather than adding a second block, e.g.:
+backfilled or enriched), fold one short clause into this message rather than adding a second
+block, e.g.:
 `Logging on for this project (standard detail) — migrated your old log layout into session-log/.`
 `Logging on for this project (standard detail) — backfilled 34 entries from existing history back to July 2nd.`
+`Logging on for this project (standard detail) — migrated your old log layout into session-log/ and backfilled dates onto 41 existing entries from transcript history.`
+`Logging on for this project (standard detail) — migrated your old log layout into session-log/, but 41 entries don't have dates and transcript history has already aged out, so Daily Activity won't populate for them yet.`
 
 ---
 
@@ -344,6 +369,11 @@ Trigger these from natural phrasing — don't wait for the exact command name:
   `node _scripts/check-log-coverage.mjs --report`, relay what it found. If it flags real
   gaps, offer to draft entries for them now (same format as any other logged request) —
   don't wait for a second ask.
+- **"Backfill dates" / "add dates to my log" / "enrich the log with dates"** (also the
+  natural next step if a recap's Daily Activity says entries lack dates) → run
+  `node _scripts/enrich-log-dates.mjs`, relay what it did: how many entries got a date, how
+  many were interpolated from neighbors, and whether any are still undated because
+  transcript history has aged out.
 - **If a Stop/SessionStart hook's output mentions a coverage gap** (the `⚠
   check-log-coverage:` line, or `session-log/coverage.md` exists), mention it to the user
   once, briefly, at a natural point — don't wait for them to ask. This is the one hook

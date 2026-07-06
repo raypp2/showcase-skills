@@ -38,11 +38,12 @@ Ask in plain language, no commands to remember:
 
 | You ask | You get |
 |---|---|
-| "What did this cost so far?" | Cost by model and by time window (this session / 7d / 30d / all-time) |
+| "What did this cost so far?" | Cost by model and by time window (today / 7d / 30d / all-time) |
 | "Make a recap" | A section picker, then `session-log/YYYY-MM-DD-Recap.html` — open it in any browser |
 | "Take out the dollar amounts" / "swap cost for hours" | A second file, `...-Recap-Shared.html`, with every dollar figure replaced by its time or percentage equivalent. Only built if you ask for the cost swap specifically — never inferred from a generic "make this shareable" |
 | "What decisions did I make?" | Read straight from the log and answered in chat — no dedicated recap section |
 | "Log lighter" / "log deeper" | Changes how much detail future entries capture |
+| "Backfill dates" | Entries from a pre-2.1 log that migrated in without dates get real ones, matched from transcript history |
 | "Milestone: shipped the v1 API" | Recorded, and it shows up on the recap's AI-written milestones & capabilities timeline |
 
 ## What the recap shows
@@ -55,18 +56,18 @@ overwriting a single fixed file — recaps from different days accumulate side b
 
 | Section | Kind | What it shows |
 |---|---|---|
-| Daily activity | Deterministic | Cost bars per day — tap one to see that day's entries |
-| Cost & time | Deterministic | Cost by model, and by time window (session / 7d / 30d / all-time) |
+| Daily activity with cost & time detail | Deterministic | Cost bars per day (tap one to see that day's entries), plus cost by model and by time window (today / 7d / 30d / all-time) |
 | Workstreams | AI-written | Gantt-style overview of activity threads Claude classifies from the log, plus an accordion detail list |
 | Milestones & capabilities timeline | AI-written | A dual timeline pairing declared milestones with capabilities shipped |
 | How you use Claude | AI-written | Patterns Claude notices in how you prompt and collaborate |
 | Findings, ranked by value | AI-written | Ranked, actionable findings — project direction and how you could work with Claude better — closed by a "three things this week" capstone |
 
-The two deterministic sections are always safe and instant — they're just read off the log
-and usage snapshot. The four AI-written ones ask Claude to actually read the log and draft
-analysis, so they take a bit longer. All six are optional; say what you want ("just the
-milestones timeline," "everything," "skip the AI stuff") and that's what gets built. There's
-no standalone milestones list or key-decisions view — milestones surface through the AI
+The deterministic section is always safe and instant — it's just read off the log and usage
+snapshot. The four AI-written ones ask Claude to actually read the log and draft analysis,
+so they take a bit longer. Asking for a recap defaults to the complete report (all five);
+say what you want ("just the milestones timeline," "just the deterministic section," "skip
+the AI stuff") and that's what gets built instead. There's no standalone milestones list or
+key-decisions view — milestones surface through the AI
 timeline, and decisions stay in the log itself, answered conversationally when you ask.
 
 ## How it works
@@ -115,7 +116,7 @@ instead of reconstructing the project from memory and file timestamps.
   generation, AI-authored sections) — split out from SKILL.md since it's substantial and
   only read on demand, not every session
 - [`BACKFILL.md`](BACKFILL.md) — how setup reconstructs entries from an existing project's
-  transcript history
+  transcript history, and how it adds dates to a pre-2.1 log that migrated in without them
 - [`MIGRATION.md`](MIGRATION.md) — upgrading a project set up with the pre-2.1 flat file
   layout (`session-log.md` at the project root instead of the unified folder)
 
@@ -135,6 +136,7 @@ showcase-log/
 │  ├─ cost-report.mjs
 │  ├─ generate-recap.mjs
 │  ├─ backfill-from-history.mjs
+│  ├─ enrich-log-dates.mjs
 │  └─ lib/                     shared path/parsing/usage/transcript helpers
 ├─ assets/
 │  └─ recap-template.html      HTML shell generate-recap.mjs fills in

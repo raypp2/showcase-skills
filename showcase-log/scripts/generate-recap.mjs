@@ -69,14 +69,20 @@ function costByModelTable(share) {
 }
 
 // --- cost: by time window ---
+// "Today" is calendar-day, not Claude Code session ID: a session ID persists
+// across every resume of the same conversation, so a project worked on
+// intermittently over months in one long-running thread would otherwise
+// report the exact same figure for "this session" as "all time" — a real
+// bug this used to have. Calendar-day matches what a user actually means by
+// "how much have I spent recently."
 function costByWindowTable() {
   if (!usageRows.length) return '<p class="empty-note">No usage data yet.</p>';
   const latestTs = usageRows.reduce((a, r) => (r.ts && r.ts > a ? r.ts : a), '');
-  const latestSession = usageRows.slice().reverse().find((r) => r.ts === latestTs)?.session;
   const now = latestTs ? new Date(latestTs) : new Date();
+  const today = localDay(now);
   const daysAgo = (n) => new Date(now.getTime() - n * 86400000).toISOString();
   const windows = [
-    ['This session', (r) => r.session === latestSession],
+    ['Today', (r) => localDay(r.ts) === today],
     ['Last 7 days', (r) => r.ts >= daysAgo(7)],
     ['Last 30 days', (r) => r.ts >= daysAgo(30)],
     ['All time', () => true],
@@ -88,19 +94,18 @@ function costByWindowTable() {
 }
 
 // --- hours: by time window (share-mode replacement for costByWindowTable) ---
-// Entries don't carry a session id the way harvested usage rows do, so "This
-// session" is approximated as entries logged the same calendar day as the
-// latest harvested usage timestamp — consistent with how every other window
-// here is day-granular, just not a guarantee of the exact same CC session.
+// Entries don't carry a session id the way harvested usage rows do, but that's
+// moot now — "Today" is calendar-day everywhere in this file, so this matches
+// costByWindowTable's definition exactly rather than merely approximating it.
 function hoursByWindowTable() {
   const daily = buildDailyData();
   if (!daily.length) return '<p class="empty-note">No entries yet.</p>';
   const latestTs = usageRows.reduce((a, r) => (r.ts && r.ts > a ? r.ts : a), '');
-  const latestDay = latestTs ? localDay(latestTs) : daily[daily.length - 1].date;
+  const today = latestTs ? localDay(latestTs) : daily[daily.length - 1].date;
   const now = latestTs ? new Date(latestTs) : new Date();
   const daysAgo = (n) => new Date(now.getTime() - n * 86400000).toISOString().slice(0, 10);
   const windows = [
-    ['This session', (d) => d.date === latestDay],
+    ['Today', (d) => d.date === today],
     ['Last 7 days', (d) => d.date >= daysAgo(7)],
     ['Last 30 days', (d) => d.date >= daysAgo(30)],
     ['All time', () => true],
@@ -205,7 +210,17 @@ function buildDailyData() {
 // and stack to the right of the bars instead of below them.
 function dailyChart(share) {
   const daily = buildDailyData();
-  if (!daily.length) return { bars: '<p class="empty-note">No dated entries yet.</p>', axis: '', legend: '' };
+  if (!daily.length) {
+    // Entries can exist but still produce zero dated days — a log migrated
+    // from the pre-v2 numbered heading format (`### #N — ...`) has content
+    // but no date in any heading until enrich-log-dates.mjs runs. Tell the
+    // user what happened and how to fix it, rather than a bare empty state
+    // that reads as "there's nothing here yet."
+    const msg = entries.length
+      ? 'No dated entries yet — the log&rsquo;s entries use the pre-v2 heading format without dates. Say &ldquo;backfill dates&rdquo; to enrich them from transcript history.'
+      : 'No dated entries yet.';
+    return { bars: `<p class="empty-note">${msg}</p>`, axis: '', legend: '' };
+  }
 
   // Share mode scales and labels bars by hours, not cost — sizing the bars by
   // cost while labeling them with hours would still visually leak the relative
