@@ -1,64 +1,76 @@
 #!/usr/bin/env node
-// generate-recap.mjs — renders session-log/recap.html: a single-page
-// overview combining cost (the same two tables cost-report.mjs prints),
-// milestones (condensed — see decision-digest.mjs in chat for everything on
-// the decisions side), and key decisions (capped). Deterministic assembly of
-// what the other scripts already compute; no narrative writing, no era
-// inference.
+// generate-recap.mjs — renders session-log/YYYY-MM-DD-Recap.html: the main
+// report back to the user. A single page combining cost (the same two
+// tables cost-report.mjs prints) — deterministic assembly of what's already
+// in the log; no narrative writing, no era inference. Milestones and key
+// decisions are covered by the AI-authored "Milestones & capabilities
+// timeline" and the log itself, not a standalone deterministic section here.
+//
+// Each run writes a file stamped with today's date, so recaps accumulate
+// side by side in session-log/ instead of overwriting one another — running
+// it again the same day overwrites that day's file, but different days
+// produce separate files.
 //
 // USAGE:
-//   node _scripts/generate-recap.mjs           # write session-log/recap.html
+//   node _scripts/generate-recap.mjs           # write session-log/YYYY-MM-DD-Recap.html
 //   node _scripts/generate-recap.mjs --root <dir>
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { resolvePaths } from './lib/paths.mjs';
-import { loadEntries, loadMarkers, entryLabel } from './lib/log.mjs';
-import { loadUsageRows, localDay, fmt, money, windowTotal } from './lib/usage.mjs';
-
-const DECISIONS_SHOWN = 15;
-const MILESTONES_SHOWN = 10;
+import { loadEntries, entryLabel } from './lib/log.mjs';
+import { loadUsageRows, localDay, fmt, money, windowTotal, PRICING_AS_OF } from './lib/usage.mjs';
 
 const argv = process.argv.slice(2);
 const opt = (name) => {
   const i = argv.indexOf(name);
   return i >= 0 && argv[i + 1] ? argv[i + 1] : null;
 };
+// --share produces a second, separate artifact (never the default) with every
+// dollar figure swapped for its time or percentage equivalent — for sending a
+// recap to someone else without disclosing what was actually spent. See
+// RECAP.md's "Shareable version" section for when/how this gets invoked.
+const SHARE = argv.includes('--share');
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const P = resolvePaths(opt('--root') || path.resolve(SCRIPT_DIR, '..'));
 const projectName = path.basename(P.ROOT);
 
 const entries = loadEntries(P);
-const { milestones } = loadMarkers(P);
 const usageRows = loadUsageRows(P);
 
 const escapeHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-// --- cost: by model ---
-function costByModelTable() {
+// --- cost: by model (progress-bar rows; share = pct of total, so it also sets bar width).
+// In share mode the dollar figure is dropped and only the relative split remains — the
+// underlying computation is identical, just one span is omitted. ---
+function costByModelTable(share) {
   const byModel = new Map();
-  let total = { msgs: 0, cost: 0 };
+  let total = 0;
   for (const r of usageRows) {
-    if (!byModel.has(r.model)) byModel.set(r.model, { msgs: 0, cost: 0 });
-    const a = byModel.get(r.model);
-    a.msgs++; a.cost += r.cost_usd;
-    total.msgs++; total.cost += r.cost_usd;
+    byModel.set(r.model, (byModel.get(r.model) || 0) + r.cost_usd);
+    total += r.cost_usd;
   }
   if (!byModel.size) return '<p class="empty-note">No usage data yet.</p>';
-  const rows = [...byModel.entries()].sort((a, b) => b[1].cost - a[1].cost)
-    .map(([m, a]) => `<tr><td>${escapeHtml(m)}</td><td class="num">${money(a.cost)}</td></tr>`)
-    .join('\n');
-  return `<table>
-    <thead><tr><th>Model</th><th class="num">Cost</th></tr></thead>
-    <tbody>${rows}<tr class="total"><td>Total</td><td class="num">${money(total.cost)}</td></tr></tbody>
-  </table>`;
+  return [...byModel.entries()].sort((a, b) => b[1] - a[1]).map(([m, cost]) => {
+    const pct = total > 0 ? Math.round((cost / total) * 100) : 0;
+    const costSpan = share ? '' : `<span class="cost-model-cost">${money(cost)}</span>`;
+    return `<div class="cost-model-row">
+      <div class="cost-model-head">
+        <span class="cost-model-name">${escapeHtml(m)}</span>
+        ${costSpan}
+        <span class="cost-model-pct">${pct}%</span>
+      </div>
+      <div class="cost-model-track"><div class="cost-model-fill" style="width:${pct}%"></div></div>
+    </div>`;
+  }).join('\n')
+    + (share ? '' : `<div class="cost-footnote">Costs are API-equivalent list-price value, not necessarily what was billed.</div>`);
 }
 
 // --- cost: by time window ---
 function costByWindowTable() {
-  if (!usageRows.length) return '';
+  if (!usageRows.length) return '<p class="empty-note">No usage data yet.</p>';
   const latestTs = usageRows.reduce((a, r) => (r.ts && r.ts > a ? r.ts : a), '');
   const latestSession = usageRows.slice().reverse().find((r) => r.ts === latestTs)?.session;
   const now = latestTs ? new Date(latestTs) : new Date();
@@ -69,30 +81,47 @@ function costByWindowTable() {
     ['Last 30 days', (r) => r.ts >= daysAgo(30)],
     ['All time', () => true],
   ];
-  const rows = windows.map(([label, pred]) => {
+  return windows.map(([label, pred]) => {
     const w = windowTotal(usageRows, pred);
-    return `<tr><td>${label}</td><td class="num">${money(w.cost)}</td></tr>`;
+    return `<div class="cost-window-row"><span class="cost-window-name">${label}</span><span class="cost-window-cost">${money(w.cost)}</span></div>`;
   }).join('\n');
-  return `<table>
-    <thead><tr><th>Window</th><th class="num">Cost</th></tr></thead>
-    <tbody>${rows}</tbody>
-  </table>`;
+}
+
+// --- hours: by time window (share-mode replacement for costByWindowTable) ---
+// Entries don't carry a session id the way harvested usage rows do, so "This
+// session" is approximated as entries logged the same calendar day as the
+// latest harvested usage timestamp — consistent with how every other window
+// here is day-granular, just not a guarantee of the exact same CC session.
+function hoursByWindowTable() {
+  const daily = buildDailyData();
+  if (!daily.length) return '<p class="empty-note">No entries yet.</p>';
+  const latestTs = usageRows.reduce((a, r) => (r.ts && r.ts > a ? r.ts : a), '');
+  const latestDay = latestTs ? localDay(latestTs) : daily[daily.length - 1].date;
+  const now = latestTs ? new Date(latestTs) : new Date();
+  const daysAgo = (n) => new Date(now.getTime() - n * 86400000).toISOString().slice(0, 10);
+  const windows = [
+    ['This session', (d) => d.date === latestDay],
+    ['Last 7 days', (d) => d.date >= daysAgo(7)],
+    ['Last 30 days', (d) => d.date >= daysAgo(30)],
+    ['All time', () => true],
+  ];
+  return windows.map(([label, pred]) => {
+    const hrs = daily.filter(pred).reduce((s, d) => s + d.hours, 0);
+    return `<div class="cost-window-row"><span class="cost-window-name">${label}</span><span class="cost-window-cost">${hrs.toFixed(1)}h</span></div>`;
+  }).join('\n');
 }
 
 // --- helpers for daily grouping ---
 
-/** Format "YYYY-MM-DD" as "Jun 10" */
-function shortDate(ymd) {
+/** Format "YYYY-MM-DD" as "Jun 10" (display only), or "Jun 10, 2026" with withYear.
+ * Never used as a lookup key — the ISO string itself (e.g. "2026-06-10") is the key
+ * everywhere IDs/hrefs/data attributes need to match, since two different years can
+ * otherwise both render as "Jun 10" and collide. */
+function shortDate(ymd, withYear) {
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const [, m, d] = ymd.split('-');
-  return `${months[parseInt(m, 10) - 1]} ${parseInt(d, 10)}`;
-}
-
-/** Format "YYYY-MM-DD" as lowercase id like "jun10" */
-function dayId(ymd) {
-  const months = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
-  const [, m, d] = ymd.split('-');
-  return `${months[parseInt(m, 10) - 1]}${parseInt(d, 10)}`;
+  const [y, m, d] = ymd.split('-');
+  const base = `${months[parseInt(m, 10) - 1]} ${parseInt(d, 10)}`;
+  return withYear ? `${base}, ${y}` : base;
 }
 
 /** Format "YYYY-MM-DD" as full date like "June 10, 2025" */
@@ -128,13 +157,31 @@ function buildDailyData() {
     usageByDay.set(d, (usageByDay.get(d) || 0) + r.cost_usd);
   }
 
+  // Per-entry rate for days whose token usage was never harvested. Rather than
+  // a flat constant, derive this project's OWN measured average — total measured
+  // cost divided by entries on days that have usage — so an estimated day
+  // inherits this project's real intensity and model mix instead of an arbitrary
+  // guess. Fall back to $8/entry only when there's no measured usage anywhere to
+  // derive from (a brand-new project, or one whose transcripts all aged out).
+  const FALLBACK_PER_ENTRY = 8;
+  let measuredCost = 0;
+  let measuredEntries = 0;
+  for (const d of byDay.keys()) {
+    if (usageByDay.has(d)) {
+      measuredCost += usageByDay.get(d);
+      measuredEntries += byDay.get(d).length;
+    }
+  }
+  const perEntryEstimate = measuredEntries > 0 ? measuredCost / measuredEntries : FALLBACK_PER_ENTRY;
+
   // Build sorted array of days
   const days = [...byDay.keys()].sort();
   const result = [];
   for (const d of days) {
     const dayEntries = byDay.get(d);
     const count = dayEntries.length;
-    const cost = usageByDay.has(d) ? usageByDay.get(d) : count * 8; // estimate $8/entry if no usage data
+    const estimated = !usageByDay.has(d);
+    const cost = estimated ? count * perEntryEstimate : usageByDay.get(d);
 
     // Compute hours from start/end times
     let hours = 0;
@@ -146,76 +193,98 @@ function buildDailyData() {
       }
     }
 
-    result.push({ date: d, entries: dayEntries, count, cost, hours });
+    result.push({ date: d, entries: dayEntries, count, cost, hours, estimated });
   }
   return result;
 }
 
-// --- daily cost bars (replaces weeklyBars) ---
-function dailyBars() {
+// --- daily cost chart ---
+// Returns three separate pieces: the bars (which live INSIDE the flex row
+// `.cost-chart`), and the axis + legend, which must render as siblings OUTSIDE
+// that flex row — if they're placed inside `.cost-chart` they become flex items
+// and stack to the right of the bars instead of below them.
+function dailyChart(share) {
   const daily = buildDailyData();
-  if (!daily.length) return '<p class="empty-note">No dated entries yet.</p>';
+  if (!daily.length) return { bars: '<p class="empty-note">No dated entries yet.</p>', axis: '', legend: '' };
 
-  const maxCost = Math.max(...daily.map((d) => d.cost));
+  // Share mode scales and labels bars by hours, not cost — sizing the bars by
+  // cost while labeling them with hours would still visually leak the relative
+  // cost shape even with the dollar figure itself removed.
+  const metric = share ? 'hours' : 'cost';
+  const maxVal = Math.max(...daily.map((d) => d[metric]));
+  const peak = daily.reduce((a, b) => (b[metric] > a[metric] ? b : a));
 
   const bars = daily.map((d, idx) => {
-    const pct = maxCost > 0 ? Math.round((d.cost / maxCost) * 100) : 0;
-    const opacity = (0.15 + (pct / 100) * 0.85).toFixed(2);
-    const label = shortDate(d.date);
-    const id = dayId(d.date);
+    const pct = maxVal > 0 ? Math.max(6, Math.round((d[metric] / maxVal) * 100)) : 6;
     const dom = parseInt(d.date.split('-')[2], 10);
     const hoursStr = d.hours > 0 ? `${d.hours.toFixed(1)}h` : '—';
-    const costStr = money(d.cost);
+    const barLabel = share ? hoursStr : `${d.estimated ? '~$' : '$'}${Math.round(d.cost)}`;
+    const tip = share
+      ? `${shortDate(d.date, true)} · ${hoursStr} · ${d.count} entries`
+      : `${shortDate(d.date, true)} · ${money(d.cost)}${d.estimated ? ' (est.)' : ''} · ${d.count} entries · ${hoursStr} · ${d.estimated ? 'est. cost' : 'cost'}`;
 
-    return `<a class="cost-bar-wrap" href="#panel-${id}" data-day="${label}" data-idx="${idx}" style="text-decoration:none;color:inherit;">
-  <div class="bar-tooltip">
-    <div class="tt-date">${label}</div>
-    <div class="tt-row"><span class="tt-label">Entries</span><span>${d.count}</span></div>
-    <div class="tt-row"><span class="tt-label">Time</span><span>${hoursStr}</span></div>
-    <div class="tt-row"><span class="tt-label">Est. cost</span><span>${costStr}</span></div>
-  </div>
-  <div class="cost-bar" style="height:${pct}%;background:rgba(181,86,47,${opacity})"></div>
+    return `<a class="cost-bar-wrap" href="#panel-${d.date}" data-day="${d.date}" data-idx="${idx}" title="${escapeHtml(tip)}">
+  <div class="cost-bar-cost">${barLabel}</div>
+  <div class="cost-bar${d.estimated && !share ? ' estimated-bar' : ''}" style="height:${pct}%"></div>
   <div class="cost-bar-label">${dom}</div>
 </a>`;
   }).join('\n');
 
-  // Add date axis
-  const axisLabels = [];
-  const step = Math.max(1, Math.ceil(daily.length / 7));
-  for (let i = 0; i < daily.length; i += step) {
-    axisLabels.push(shortDate(daily[i].date));
+  // Hatching flags an *estimated* figure — hours are always directly measured
+  // from logged start/end times, never estimated, so this note is meaningless
+  // (and the hatching itself misleading) in share mode.
+  let legend = '';
+  if (!share) {
+    const hasEstimated = daily.some((d) => d.estimated);
+    if (hasEstimated) {
+      // Every estimated day's cost is count × the same per-entry rate, so recover
+      // that rate from any estimated day (cost/count) rather than recomputing it.
+      const estDay = daily.find((d) => d.estimated && d.count > 0);
+      const perEntry = estDay ? Math.round(estDay.cost / estDay.count) : 8;
+      const anyMeasured = daily.some((d) => !d.estimated);
+      const basis = anyMeasured
+        ? `this project's measured average (~$${perEntry}/entry)`
+        : `a $${perEntry}/entry placeholder`;
+      legend = `<div class="chart-legend-note">Hatched bars are estimated at ${basis} — no usage data was harvested for those days</div>`;
+    }
   }
-  const axis = `<div class="date-axis" style="margin-top:8px;"><span>${axisLabels.join('</span><span>')}</span></div>`;
-  return bars + '\n' + axis;
+
+  // Add date axis: first day … peak day … last day
+  const peakStr = share ? `${peak.hours.toFixed(1)}h` : money(peak.cost);
+  const axis = `<div class="date-axis"><span>${shortDate(daily[0].date)}</span><span>peak ${shortDate(peak.date)} · ${peakStr}</span><span>${shortDate(daily[daily.length - 1].date)}</span></div>`;
+  return { bars, axis, legend };
 }
 
 // --- no-JS day panels ---
-function dayPanels() {
+function dayPanels(share) {
   const daily = buildDailyData();
   if (!daily.length) return '';
 
   return daily.map((d) => {
-    const id = dayId(d.date);
     const full = fullDate(d.date);
-    const costStr = money(d.cost);
+    const costStr = (d.estimated ? '~$' : '$') + Math.round(d.cost);
+    const hrsStr = d.hours > 0 ? ` · ${d.hours.toFixed(1)}h logged` : '';
+    const primaryStat = share ? (d.hours > 0 ? `${d.hours.toFixed(1)}h` : '—') : costStr;
+    const metaStr = share ? `${d.count} entries` : `${d.count} entries${hrsStr}${d.estimated ? ' · estimated' : ''}`;
 
     const entryItems = d.entries.map((e) => {
       const label = entryLabel(e.heading);
-      const timeStr = e.start && e.end ? `${e.start}–${e.end}` : '';
+      const timeStr = e.start && e.end ? ` <span class="entry-meta">${e.start}–${e.end}</span>` : '';
       return `<div class="entry-item">
         <div class="entry-dot"></div>
-        <div class="entry-desc">${escapeHtml(label)}</div>
-        <div class="entry-meta">${escapeHtml(timeStr)}</div>
+        <div class="entry-text"><div class="entry-desc">${escapeHtml(label)}</div>${timeStr}</div>
       </div>`;
     }).join('\n');
 
-    return `<div id="panel-${id}" class="day-panel-target">
+    return `<div id="panel-${d.date}" class="day-panel-target">
   <a href="#page" class="panel-bg" aria-label="Close"></a>
   <div class="panel-fg">
     <div class="panel-header">
+      <div>
+        <div class="panel-date">${full}</div>
+        <div class="panel-stats"><span class="panel-cost">${primaryStat}</span><span class="panel-meta">${metaStr}</span></div>
+      </div>
       <a href="#page" class="panel-close-link" aria-label="Close">&times;</a>
-      <div class="panel-date">${full}</div>
-      <div class="panel-stats">${d.count} entries · <strong>~${costStr}</strong> estimated cost</div>
     </div>
     <div class="panel-body">
       ${entryItems}
@@ -226,12 +295,23 @@ function dayPanels() {
 }
 
 // --- JS data for interactive enhancement ---
-function dailyDataJs() {
+// Both objects below are keyed by the ISO date ("2026-06-10"), matching
+// dayKeys/dayIndexToKey in the template — never the display label, which
+// collides across years ("Jun 10" says nothing about which June).
+// In share mode the cost field is omitted from the data entirely, not just
+// hidden from view — it's read straight out of this script tag by anyone who
+// opens dev tools or view-source, so hiding the rendered `$` label alone
+// wouldn't actually withhold it.
+function dailyDataJs(share) {
   const daily = buildDailyData();
   const items = daily.map((d) => {
-    const label = shortDate(d.date);
-    return `{key:"${label}",n:${d.count},c:${Math.round(d.cost)},h:${Math.round(d.hours * 10) / 10}}`;
+    const costField = share ? '' : `c:${Math.round(d.cost)},`;
+    return `{key:"${d.date}",n:${d.count},${costField}h:${Math.round(d.hours * 10) / 10},e:${d.estimated ? 1 : 0}}`;
   }).join(',\n  ');
+  if (share) {
+    const maxHours = daily.length ? Math.round(Math.max(...daily.map((d) => d.hours)) * 10) / 10 : 0;
+    return `var dailyData = [\n  ${items}\n];\nvar maxHours = ${maxHours};`;
+  }
   const maxCost = daily.length ? Math.round(Math.max(...daily.map((d) => d.cost))) : 0;
   return `var dailyData = [\n  ${items}\n];\nvar maxCost = ${maxCost};`;
 }
@@ -239,12 +319,11 @@ function dailyDataJs() {
 function entriesJs() {
   const daily = buildDailyData();
   const dayStrings = daily.map((d) => {
-    const label = shortDate(d.date);
     const items = d.entries.map((e) => {
       const desc = entryLabel(e.heading).replace(/"/g, '\\"');
-      return `["${desc}",0,""]`;
+      return `"${desc}"`;
     }).join(',');
-    return `"${label}": [${items}]`;
+    return `"${d.date}": [${items}]`;
   }).join(',\n');
   return `var E = {\n${dayStrings}\n};`;
 }
@@ -279,80 +358,74 @@ function hoursEstimate() {
   return `${totalHours.toFixed(1)}h`;
 }
 
-// --- milestones, condensed ---
-function milestonesSection() {
-  if (!milestones.length) {
-    return '<p class="empty-note">No milestones marked yet. Say "mark this as a milestone" when something notable ships.</p>';
-  }
-  const shown = milestones.slice(-MILESTONES_SHOWN).reverse();
-  const items = shown.map((m) =>
-    `<li><span class="m-date">${escapeHtml(m.date)}</span><span>${escapeHtml(m.text)}</span></li>`).join('\n');
-  const note = milestones.length > MILESTONES_SHOWN
-    ? `<p class="note">Showing the ${MILESTONES_SHOWN} most recent of ${milestones.length} — see the full timeline for all of them.</p>` : '';
-  return `<ul class="milestone-list">${items}</ul>${note}`;
-}
-
-// --- decisions, capped ---
-function decisionsSection() {
-  const withDecisions = entries.filter((e) => e.keyDecisions.length > 0);
-  if (!withDecisions.length) return '<p class="empty-note">No Key Decisions logged yet.</p>';
-  const shown = withDecisions.slice(-DECISIONS_SHOWN).reverse();
-  const cards = shown.map((e) => {
-    const items = e.keyDecisions.map((d) => `<li>${escapeHtml(d)}</li>`).join('');
-    return `<div class="decision">
-      <div class="d-date">${escapeHtml(e.date || 'undated')}</div>
-      <div class="d-label">${escapeHtml(entryLabel(e.heading))}</div>
-      <ul>${items}</ul>
-    </div>`;
-  }).join('\n');
-  const note = withDecisions.length > DECISIONS_SHOWN
-    ? `<p class="note">Showing the ${DECISIONS_SHOWN} most recent of ${withDecisions.length} — ask for the full decision digest to see everything.</p>` : '';
-  return `${cards}${note}`;
-}
-
 // --- AI section placeholders ---
 function aiPlaceholder() {
-  return `<div class="viz-card narrative">
-  <p class="empty-note">This section is generated by Claude when you ask for a full recap. Run the script first, then ask Claude to fill in the analysis sections.</p>
-</div>`;
+  return `<p class="empty-note" style="margin-top:16px;">This section is generated by Claude when you ask for a full recap. Run the script first, then ask Claude to fill in the analysis sections.</p>`;
 }
 
 function workstreamsPlaceholder() { return aiPlaceholder(); }
 function timelinePlaceholder() { return aiPlaceholder(); }
 function patternsPlaceholder() { return aiPlaceholder(); }
-function recommendationsPlaceholder() { return aiPlaceholder(); }
+function findingsPlaceholder() { return aiPlaceholder(); }
+function threeThingsPlaceholder() { return aiPlaceholder(); }
 
 const dates = entries.map((e) => e.date).filter(Boolean);
-const dateRange = dates.length ? `${dates.reduce((a, b) => (a < b ? a : b))} – ${dates.reduce((a, b) => (a > b ? a : b))}` : 'no dated entries yet';
+const dateRange = dates.length
+  ? `${fullDate(dates.reduce((a, b) => (a < b ? a : b)))} – ${fullDate(dates.reduce((a, b) => (a > b ? a : b)))}`
+  : 'no dated entries yet';
 const dayCount = new Set(dates).size;
 const totalCost = usageRows.reduce((s, r) => s + r.cost_usd, 0);
+
+const chart = dailyChart(SHARE);
+const generatedDate = new Date().toISOString().slice(0, 10);
+
+const primaryStat = SHARE
+  ? ''
+  : `<div class="stat"><div class="stat-value">${usageRows.length ? money(totalCost) : '—'}</div><div class="stat-label">Total spend</div></div>`;
+const chartHoverDefault = SHARE
+  ? `Bar height = hours logged that day. Tap a bar to open that day's log.`
+  : `Bar height = spend that day. Tap a bar to open that day's log.`;
+const costSectionHeading = SHARE ? 'Time &amp; activity' : 'Cost &amp; time';
+const costMethodologyNote = SHARE
+  ? `<p><strong>Time, not cost.</strong> This is the shareable version of a recap that otherwise reports cost — every dollar figure has been replaced with the time-based or relative-share equivalent (hours instead of spend, percentage instead of amount) so it can be sent to someone else without disclosing what was actually spent. The private version has the full cost breakdown.</p>`
+  : `<p><strong>Cost.</strong> Per-message token usage priced at published API list rates (as of ${escapeHtml(PRICING_AS_OF)}) — <em>not necessarily what was billed</em> — then summed by model, by time window, and by day. Daily bars are real sums of that day's messages, not a day total split evenly across requests. Days whose usage was never harvested are estimated by carrying this project's own measured average cost-per-entry across that day's entries (hatched bars); with no measured data anywhere to derive from, they fall back to a flat $8/entry placeholder chosen as a reasonable assumption.</p>`;
+const shareBadge = SHARE
+  ? `<div class="share-badge">Shareable version — dollar figures replaced with time spent</div>`
+  : '';
 
 const templatePath = path.join(SCRIPT_DIR, '..', 'assets', 'recap-template.html');
 let html = fs.readFileSync(templatePath, 'utf8');
 html = html
   .replaceAll('{{PROJECT_NAME}}', escapeHtml(projectName))
   .replaceAll('{{DATE_RANGE}}', escapeHtml(dateRange))
-  .replaceAll('{{GENERATED_DATE}}', new Date().toISOString().slice(0, 10))
+  .replaceAll('{{GENERATED_DATE}}', generatedDate)
+  .replaceAll('{{PRICING_AS_OF}}', escapeHtml(PRICING_AS_OF))
   .replace('{{ENTRY_COUNT}}', fmt(entries.length))
-  .replace('{{TOTAL_COST}}', usageRows.length ? money(totalCost) : '—')
+  .replace('{{PRIMARY_STAT}}', primaryStat)
   .replace('{{DAY_COUNT}}', fmt(dayCount))
-  .replace('{{COST_BY_MODEL_TABLE}}', costByModelTable())
-  .replace('{{COST_BY_WINDOW_TABLE}}', costByWindowTable())
-  .replace('{{DAILY_BARS}}', dailyBars())
-  .replace('{{DAY_PANELS}}', dayPanels())
-  .replace('{{DAILY_DATA_JS}}', dailyDataJs())
+  .replace('{{COST_BY_MODEL_TABLE}}', costByModelTable(SHARE))
+  .replace('{{COST_BY_WINDOW_TABLE}}', SHARE ? hoursByWindowTable() : costByWindowTable())
+  .replace('{{COST_SECTION_HEADING}}', costSectionHeading)
+  .replace('{{COST_METHODOLOGY_NOTE}}', costMethodologyNote)
+  .replace('{{CHART_HOVER_DEFAULT}}', chartHoverDefault)
+  .replace('{{SHARE_BADGE}}', shareBadge)
+  .replaceAll('{{SHARE_MODE}}', SHARE ? 'true' : 'false')
+  .replace('{{DAILY_BARS}}', chart.bars)
+  .replace('{{DAILY_AXIS}}', chart.axis)
+  .replace('{{DAILY_LEGEND}}', chart.legend)
+  .replace('{{DAY_PANELS}}', dayPanels(SHARE))
+  .replace('{{DAILY_DATA_JS}}', dailyDataJs(SHARE))
   .replace('{{ENTRIES_JS}}', entriesJs())
   .replace('{{START_DATE_JS}}', startDateJs())
   .replace('{{TOTAL_DAYS_JS}}', totalDaysJs())
   .replace('{{HOURS_ESTIMATE}}', hoursEstimate())
-  .replace('{{MILESTONES_SECTION}}', milestonesSection())
-  .replace('{{DECISIONS_SECTION}}', decisionsSection())
-  .replace('{{PROJECT_DESC}}', '')
   .replace('{{WORKSTREAMS_SECTION}}', workstreamsPlaceholder())
   .replace('{{TIMELINE_SECTION}}', timelinePlaceholder())
   .replace('{{PATTERNS_SECTION}}', patternsPlaceholder())
-  .replace('{{RECOMMENDATIONS_SECTION}}', recommendationsPlaceholder());
+  .replace('{{FINDINGS_SECTION}}', findingsPlaceholder())
+  .replace('{{THREE_THINGS_SECTION}}', threeThingsPlaceholder());
 
+const recapFile = path.join(P.LOG_DIR, `${generatedDate}-Recap${SHARE ? '-Shared' : ''}.html`);
 fs.mkdirSync(P.LOG_DIR, { recursive: true });
-fs.writeFileSync(P.RECAP_FILE, html);
-console.log(`Wrote ${P.RECAP_FILE} (${entries.length} entries, ${milestones.length} milestones, ${entries.filter((e) => e.keyDecisions.length).length} entries with decisions)`);
+fs.writeFileSync(recapFile, html);
+console.log(`Wrote ${recapFile} (${entries.length} entries)`);
