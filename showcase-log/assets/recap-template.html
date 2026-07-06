@@ -124,23 +124,37 @@ details.ws-item[open] .ws-item-caret { transform: rotate(90deg); }
 .ws-item-blurb { font-size: 13.5px; line-height: 1.6; color: var(--body-2); margin: 0 0 10px; }
 .ws-item-stat { font-family: var(--font-mono); font-size: 11.5px; color: var(--accent); font-weight: 500; }
 
-/* -- Dual timeline -- */
-.tl-heads { display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr); gap: 18px; margin-bottom: 12px; }
+/* -- Dual timeline --
+   .tl-heads and every .tl-row are separate grid containers (not CSS Subgrid),
+   so their column tracks only align because both declare the identical
+   `minmax(0,1fr) 92px minmax(0,1fr)` template against the same available
+   width — the middle track is a fixed px, not `auto`, specifically so a
+   header with no middle content and a row with a date badge (or a gap row
+   with just a dashed dot) can't compute different middle-track widths and
+   throw the two side columns out of alignment with each other. Keep this
+   template identical across .tl-heads and .tl-row if either ever changes. */
+.tl-heads { display: grid; grid-template-columns: minmax(0,1fr) 92px minmax(0,1fr); gap: 18px; margin-bottom: 12px; }
 .tl-header-left { text-align: right; font-family: var(--font-mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--ms-head); font-weight: 700; }
 .tl-header-right { text-align: left; font-family: var(--font-mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--cap-head); font-weight: 700; }
+.tl-mobile-legend { display: none; }
 .tl-wrap { position: relative; }
 .tl-rail { position: absolute; left: 50%; transform: translateX(-50%); top: 10px; bottom: 10px; width: 2px; background: var(--line-strong); }
-.tl-row { display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr); gap: 18px; align-items: center; margin-bottom: 16px; }
+.tl-row { display: grid; grid-template-columns: minmax(0,1fr) 92px minmax(0,1fr); gap: 18px; align-items: center; margin-bottom: 16px; }
 .tl-row.tl-gap-row { margin: 4px 0 14px; }
-.tl-left { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }
-.tl-right { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-start; }
+/* min-width: 0 on the grid items (.tl-left/.tl-right) AND the flex item they
+   contain (.tl-card) — without it, a card's automatic minimum width defaults
+   to its title/description's content size, which can exceed the grid
+   column's actual computed width and overflow the viewport instead of
+   shrinking to fit, even though the column track itself is minmax(0,1fr). */
+.tl-left { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; min-width: 0; }
+.tl-right { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-start; min-width: 0; }
 .tl-pill-cell { justify-self: center; position: relative; z-index: 2; }
 .tl-date-badge { display: inline-block; background: var(--ink); color: var(--masthead-text); font-family: var(--font-mono); font-size: 11px; font-weight: 600; padding: 5px 11px; border-radius: 20px; white-space: nowrap; }
 .tl-gap-dot { display: block; width: 12px; height: 12px; border-radius: 50%; border: 2px dashed var(--line-strong); background: var(--card-bg); }
 .tl-gap-l, .tl-gap-r { font-family: var(--font-mono); font-size: 11px; color: var(--muted-2); font-style: italic; }
 .tl-gap-l { text-align: right; }
 .tl-gap-r { text-align: left; }
-.tl-card { width: min(380px, 100%); border-radius: 12px; padding: 13px 15px; transition: box-shadow .15s ease, border-color .15s ease, transform .15s ease; }
+.tl-card { width: min(380px, 100%); min-width: 0; border-radius: 12px; padding: 13px 15px; transition: box-shadow .15s ease, border-color .15s ease, transform .15s ease; }
 .tl-ms-card { background: var(--ms-bg); border: 1px solid var(--ms-border); }
 .tl-ms-card:hover { border-color: var(--ms-head); box-shadow: 0 4px 14px -6px rgba(181,138,60,.4); transform: translateY(-1px); }
 .tl-ms-title { font-weight: 700; font-size: 14.5px; line-height: 1.25; color: var(--ms-title); }
@@ -151,6 +165,18 @@ details.ws-item[open] .ws-item-caret { transform: rotate(90deg); }
 .tl-cap-desc { font-size: 12.5px; color: var(--cap-desc); margin-top: 4px; line-height: 1.4; }
 @media (max-width: 560px) {
   .tl-heads, .tl-rail { display: none !important; }
+  /* The two-column header is the only place "Milestone"/"Capability" are
+     named in text — hiding it outright would leave color as the only
+     differentiator once rows stack into one column. This compact legend
+     keeps the same swatch colors as the header text (--ms-head/--cap-head)
+     so the mapping survives the breakpoint, same pattern Workstreams and
+     Findings already use (a swatch/chip on every item, not a separate
+     legend that can scroll out of view). */
+  .tl-mobile-legend { display: flex; gap: 18px; margin-bottom: 14px; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted-2); }
+  .tl-legend-item { display: flex; align-items: center; gap: 6px; }
+  .tl-legend-swatch { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+  .tl-legend-ms { background: var(--ms-head); }
+  .tl-legend-cap { background: var(--cap-head); }
   .tl-row { grid-template-columns: 1fr !important; align-items: stretch !important; gap: 8px !important; margin-bottom: 24px !important; }
   .tl-pill-cell { order: -1; justify-self: start !important; }
   .tl-left, .tl-right { justify-content: flex-start !important; }
@@ -316,7 +342,11 @@ details.ws-item[open] .ws-item-caret { transform: rotate(90deg); }
 </div>
 
 <!-- ========== DAILY ACTIVITY ========== -->
-<section class="recap-section" data-section="daily-activity">
+<!-- Daily activity and Cost & time are two separate <section> elements (kept apart so
+     each retains its own layout/heading) but share one data-section value — the section
+     picker treats them as a single user-facing choice, never selectable independently, so
+     removing/keeping "the" section by this attribute removes/keeps both together. -->
+<section class="recap-section" data-section="daily-activity-cost">
   <div class="section-eyebrow">// daily_activity</div>
   <h2>Daily activity</h2>
   <p class="hover-info" id="cost-hover-info">{{CHART_HOVER_DEFAULT}}</p>
@@ -330,7 +360,7 @@ details.ws-item[open] .ws-item-caret { transform: rotate(90deg); }
 </section>
 
 <!-- ========== COST & TIME ========== -->
-<section class="recap-section" data-section="cost">
+<section class="recap-section" data-section="daily-activity-cost">
   <div class="section-eyebrow">// cost_and_time</div>
   <h2>{{COST_SECTION_HEADING}}</h2>
   <div class="cost-tables" style="margin-top:20px;">

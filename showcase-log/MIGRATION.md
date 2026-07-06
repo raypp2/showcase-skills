@@ -44,7 +44,12 @@ Setup's normal steps handle the rest, but be aware of two follow-ups they cover:
   ```
   If this untracks anything, it will show as a deletion in the next commit.
 - **Entry format** — v1 numbered entries (`### #12 — ...`) and v2 dated entries coexist in
-  the same `session-log.md`; the archiver understands both, so there is nothing to rewrite.
+  the same `session-log.md`; the archiver understands both, so there is nothing that
+  *needs* rewriting for the layout migration itself. But v1 entries carry no date, and
+  every deterministic recap feature keyed on date (daily activity chart, day drill-downs,
+  the workstreams gantt) renders empty for them until they get one — that's what Step 4's
+  case B (see `SKILL.md`) and `scripts/enrich-log-dates.mjs` are for, and setup runs that
+  check automatically right after this migration, not as a separate ask.
 
 Once the files are moved, tell the user their old log layout was migrated into
 `session-log/` and continue with normal setup.

@@ -111,3 +111,61 @@ Delete `session-log/.backfill-source.json` — it's scratch input, not part of t
 log. Fold the result into the normal Step 9/10 setup report as one short clause,
 e.g.: `Logging on for this project (standard detail) — backfilled 34 entries from
 existing history back to July 2nd.` Don't add a separate report block for this.
+
+## Enriching an already-migrated log
+
+This is a **different** code path from Steps 1–5 above — those draft brand-new entries
+into an empty log. This one is for a log that already has content but no date: a project
+that had v1-format logging running before 2.1, whose `### #N — ...` numbered entries
+Step 1's migration just moved into `session-log/session-log.md` unchanged. Migration fixes
+the folder layout; it does nothing to the heading format, so those entries keep their
+description and (often) a time-of-day, but carry no date at all — and `entry.date` is
+exactly what every deterministic recap feature (the daily activity chart, day drill-down
+panels, the workstreams gantt) reads to place an entry on the calendar. Left alone, those
+features silently ship empty, with nothing in setup's own output to explain why.
+
+### When this runs
+
+As part of `SKILL.md` Step 4's case B, automatically, no extra question — same reasoning
+as the from-scratch backfill above:
+
+- `session-log/session-log.md` already exists, **and**
+- it contains at least one entry whose heading has no date in it, **and**
+- `~/.claude/projects/<flattened-path>/` exists and contains at least one recoverable user
+  turn — the same condition Step 4's case A checks before running a from-scratch backfill.
+
+### What it does
+
+`scripts/enrich-log-dates.mjs` reads the same transcript turns
+`backfill-from-history.mjs` does, then for each undated entry:
+
+1. Takes its verbatim initial prompt (the first `**Prompt:**` blockquote).
+2. Scores it against transcript turns strictly after the turn last matched to the previous
+   undated entry, by `max(longest common prefix, longest common substring)`. A high enough
+   score there is accepted immediately — found "in order."
+3. If nothing in that remaining stretch scores high enough, falls back to a global
+   best-match search across every turn, gated by a stricter bar since a match found this way
+   has weaker positional evidence — found "out of order."
+4. Any entry with no Prompt field, or no match clearing either bar, is interpolated from the
+   nearest neighboring entry that does have a date (its own match, an already-dated v2
+   entry, or another entry this same run already resolved) — preferring the entry
+   immediately before it.
+5. A final pass snaps any entry whose date precedes its predecessor's forward onto the
+   predecessor's date, so the result is never out of chronological order even where a
+   global-fallback match landed early.
+6. Rewrites each matched entry's heading in place — `### #N — [HH:MM–HH:MM] desc` becomes
+   `### #N — YYYY-MM-DD [HH:MM–HH:MM] desc` — touching nothing else about the entry: not
+   its number, not its time range (that came from the log, not the transcript), not its
+   content.
+
+This is a heuristic, best-effort recovery — same spirit as `check-log-coverage.mjs`'s
+substring matching — not a guarantee that every entry lands on its exact real date. Run
+`node scripts/enrich-log-dates.mjs --report` any time to see counts without writing
+anything.
+
+### If transcript history has already aged out
+
+The script won't fabricate a date with nothing to derive it from — with no recoverable
+transcript turns at all, it leaves every entry exactly as it is and says so. Fold that into
+the Step 10 setup report, so the user learns why Daily Activity stays empty for those
+entries instead of discovering it only when they ask for a recap.

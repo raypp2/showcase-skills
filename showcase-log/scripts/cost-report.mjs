@@ -2,11 +2,19 @@
 // cost-report.mjs — quick cost answer from session-log/usage/usage.jsonl,
 // in dollars first (tokens are supporting detail, not the headline).
 //
-// Two views: totals by model, and totals by time window (this session /
-// last 7 days / last 30 days / all time) — the window view is what
+// Two views: totals by model, and totals by time window (today / last 7
+// days / last 30 days / all time) — the window view is what
 // usage/summary.md doesn't give you (it's day×model only), so this script
 // exists specifically to answer "how's my spend trending" without Claude
 // having to re-read a potentially multi-MB usage.jsonl to compute it live.
+//
+// "Today" is calendar-day, not Claude Code session ID: a Claude Code session
+// ID persists across every resume of the same conversation, so a project
+// worked on intermittently over months in one long-running thread would
+// otherwise report the exact same number for "this session" as "all time" —
+// a real bug this used to have. Calendar-day matches what a user actually
+// means by "how much have I spent recently" and can never collide with
+// "all time" on a project with more than one day of history.
 //
 // USAGE:
 //   node _scripts/cost-report.mjs           # both tables, plain text
@@ -63,12 +71,12 @@ console.log(`Heaviest day: ${heaviestDay} (${money(heaviestCost)})`);
 
 // --- by time window ---
 const latestTs = rows.reduce((a, r) => (r.ts && r.ts > a ? r.ts : a), '');
-const latestSession = rows.slice().reverse().find((r) => r.ts === latestTs)?.session;
 const now = latestTs ? new Date(latestTs) : new Date();
+const today = localDay(now);
 const daysAgo = (n) => new Date(now.getTime() - n * 24 * 60 * 60 * 1000).toISOString();
 
 const windows = [
-  ['This session', (r) => r.session === latestSession],
+  ['Today', (r) => localDay(r.ts) === today],
   ['Last 7 days', (r) => r.ts >= daysAgo(7)],
   ['Last 30 days', (r) => r.ts >= daysAgo(30)],
   ['All time', () => true],
