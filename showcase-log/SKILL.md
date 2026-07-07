@@ -68,6 +68,8 @@ session-log/
 | `_scripts/lib/*.mjs` | Shared path/parsing/usage/transcript helpers the scripts above import — keeps them from drifting out of sync |
 | `_scripts/.showcase-log-version` | The skill version these scripts were copied from — the only way to tell an installed copy is behind the current source, since re-running setup is what refreshes it |
 | `assets/recap-template.html` | HTML shell the generator fills in |
+| `assets/logging-block-template.md` | The Logging Block's actual text — Step 3 reads it from the skill directory and substitutes `{{DETAIL_TIER}}`; never installed into the project |
+| `assets/session-log-readme-template.md` | The Folder README's actual text — Step 5 copies it straight to `session-log/README.md`; never installed into the project |
 | Hooks in `.claude/settings.json` | Run the usage snapshot, archiver, and coverage check deterministically (SessionStart + Stop) — no model or user cooperation needed |
 
 The deterministic base is a **light, mechanical** layer distinct from `/showcase-project`:
@@ -106,13 +108,14 @@ Logging Block's on-demand outputs.
 
 ### Step 3: CLAUDE.md
 
-- **No `CLAUDE.md`:** create it containing only the Logging Block below.
+Read `assets/logging-block-template.md` from the skill directory and substitute
+`{{DETAIL_TIER}}` with the tier chosen in Step 2 — this rendered text is the Logging Block.
+
+- **No `CLAUDE.md`:** create it containing only the Logging Block.
 - **Exists, no `<!-- SHOWCASE-LOGGING-START -->`:** append the Logging Block (blank line before it).
 - **Exists with the marker:** replace everything between `<!-- SHOWCASE-LOGGING-START -->`
   and `<!-- SHOWCASE-LOGGING-END -->` (inclusive) with the current Logging Block — this
   upgrades older installs in place. Preserve the tier if one was already set.
-
-In the block, set the `Detail tier:` line to the chosen tier.
 
 ### Step 4: Backfill or enrich from history, if this is an existing project
 
@@ -164,10 +167,10 @@ If it exists (created just now by Step 4, or from any earlier version), leave it
 alone — v1 numbered entries, v2 dated entries, and backfilled entries coexist; the archiver
 understands all of them.
 
-Then write `session-log/README.md` from the **Folder README** template below, overwriting
-any existing copy (it's a generated guide owned by the skill, safe to refresh). This gives
-anyone browsing the repo — teammates, future you, a reviewer — a plain-English explanation
-of what the folder is and how to drive it.
+Then copy `assets/session-log-readme-template.md` from the skill directory to
+`session-log/README.md`, overwriting any existing copy (it's a generated guide owned by the
+skill, safe to refresh). This gives anyone browsing the repo — teammates, future you, a
+reviewer — a plain-English explanation of what the folder is and how to drive it.
 
 ### Step 6: Git hygiene
 
@@ -272,164 +275,18 @@ block, e.g.:
 
 ## The Logging Block
 
-Insert exactly this into CLAUDE.md (with `Detail tier:` set appropriately):
-
-```markdown
-<!-- SHOWCASE-LOGGING-START -->
-## Project Log
-
-**Maintain a running log in `session-log/session-log.md`.** After completing each user
-request (not during — finish the work first, then log), silently append an entry. Do not
-ask permission. Do not mention you are logging.
-
-**Detail tier: standard** <!-- lite | standard | deep — set by /showcase-log -->
-
-Run `date "+%Y-%m-%d %H:%M"` when you begin work on a request so the entry records real
-start and end times. Never estimate times from memory, and never number entries.
-
-### Entry Format
-
-Heading: `### YYYY-MM-DD HH:MM–HH:MM — Short description`
-
-Fields by tier — lite: Prompt, Context, Outcome, Model. standard: + Actions, Key Decisions,
-Errors & Resolution. deep: + Sources, Approach, Verification. Omit any field with
-nothing to say, except Prompt (always present).
-
-    ### 2026-07-02 14:32–14:47 — Dashboard build from tracker data
-
-    **Prompt:**
-    > [The user's message, verbatim and complete]
-
-    **Context:** [only when the prompt answers a question you asked]
-    Q: [the question and the options you offered] → A: [what they chose]
-
-    **Outcome:** [one or two sentences: what was produced or changed]
-
-    **Actions:**
-    - [Created/Modified] `filename` — [what it is / what changed]
-
-    **Key Decisions:**
-    - [Non-obvious choices: library selection, data interpretation, scope]
-
-    **Errors & Resolution:**
-    - [Error] → [Resolution]
-
-    **Model:** [model id — only when it differs from the previous entry]
-
-### Rules
-
-- **Prompts are verbatim** — complete, unedited, typos preserved. Never paraphrase, never
-  elide with "...", never bracket-summarize. Multi-turn exchanges get one `>` blockquote
-  per user turn, in order. The user's exact words are the most valuable data in this log;
-  every other field may be economized, this one never.
-- When the user's message answers a question you asked (including multiple-choice
-  selections), record the question with the answer in **Context** — an answer without its
-  question is unreadable later.
-- Log every request, including clarifying exchanges and small corrections — the
-  back-and-forth is part of the data. Do not log the logging itself or this setup.
-- At the start of a new session, or when the model changes, append on its own line:
-  `--- session YYYY-MM-DD HH:MM (model-id) ---`
-- If the user declares a milestone, append: `> **Milestone (YYYY-MM-DD):** [their words]`.
-  Never invent milestones yourself — phases are only visible in retrospect.
-- Archiving now happens automatically via hooks (rolls old entries into
-  `session-log/archive/` once the live log passes ~40, refreshes the usage snapshot). The
-  hook debounces daily, so on an unusually heavy day you can still run
-  `node _scripts/archive-session-log.mjs` yourself if the live file is visibly getting long
-  — it's a same-day backstop, not something you need to track normally.
-- **`session-log/` is private by default** — prompts are verbatim and may contain anything
-  the user typed. If this project is not a git repository yet and one gets initialized
-  later (`git init`, cloning turns it into one, etc.), add `/session-log/` to `.gitignore`
-  at that point, before anything is committed — don't wait to be asked.
-
-### On-demand outputs
-
-Trigger these from natural phrasing — don't wait for the exact command name:
-
-- **Cost / spend / token usage asked about** → run `node _scripts/usage-snapshot.mjs` (no
-  `--auto` — this is the one time a fresh harvest matters more than the 24h debounce, so
-  today's spend isn't reported stale), then `node _scripts/cost-report.mjs`, relay the
-  output conversationally (lead with the dollar total, not the table).
-- **"Make a recap" / "give me an overview"** → follow [RECAP.md](RECAP.md), which ends by
-  mentioning that dollar figures can be swapped out if wanted — never build that variant
-  unless asked.
-- **"Milestone timeline" / "show me the milestones"** → follow [RECAP.md](RECAP.md),
-  defaulting the section picker to just the Milestones & capabilities timeline section.
-- **"Take out the dollar amounts" / "swap cost for hours" / "I don't want to show what this
-  cost"** → follow RECAP.md's "Cost-redacted version" section against that day's already-
-  generated private recap. This is specifically about removing the dollar figures — don't
-  infer it from a generic "make this shareable" or "something I can send someone" ask, which
-  could mean all kinds of things (trimming prompts, dropping findings, nothing at all) that
-  have nothing to do with cost.
-- **"What decisions did I make" / "decision log" / "why did I do X"** → there's no
-  dedicated recap section for this — read `session-log/session-log.md` (and `archive/` if
-  needed) directly for entries with a Key Decisions field and relay them conversationally.
-- **"Change detail level" / "log lighter/deeper" / "log less/more"** → edit the
-  `Detail tier:` line above to the requested tier (lite/standard/deep). Confirm briefly.
-- **"Did we miss anything" / "check the log for gaps" / "is the log complete"** → run
-  `node _scripts/check-log-coverage.mjs --report`, relay what it found. If it flags real
-  gaps, offer to draft entries for them now (same format as any other logged request) —
-  don't wait for a second ask.
-- **"Backfill dates" / "add dates to my log" / "enrich the log with dates"** (also the
-  natural next step if a recap's Daily Activity says entries lack dates) → run
-  `node _scripts/enrich-log-dates.mjs`, relay what it did: how many entries got a date, how
-  many were interpolated from neighbors, and whether any are still undated because
-  transcript history has aged out.
-- **If a Stop/SessionStart hook's output mentions a coverage gap** (the `⚠
-  check-log-coverage:` line, or `session-log/coverage.md` exists), mention it to the user
-  once, briefly, at a natural point — don't wait for them to ask. This is the one hook
-  output worth surfacing unprompted; the usage/archive hooks are silent on purpose.
-<!-- SHOWCASE-LOGGING-END -->
-```
-
----
+The full text lives in [`assets/logging-block-template.md`](assets/logging-block-template.md)
+— Step 3 reads it directly from the skill directory and substitutes `{{DETAIL_TIER}}` with
+the tier chosen in Step 2. That file has the actual entry-format grammar, rules, and
+on-demand trigger phrases; nothing here duplicates it, so there's exactly one place to
+update when any of that changes.
 
 ## The Folder README
 
-Write this to `session-log/README.md` in Step 5 (it's for humans browsing the repo, not
-for Claude — no markers, safe to overwrite on re-setup):
-
-```markdown
-# session-log/
-
-This folder is an automatic, running log of the work done on this project with Claude
-Code. Claude appends an entry here after every request — verbatim prompt, what changed,
-key decisions, and token cost — and can turn that history into reports on demand. Setup
-lives in the `showcase-log` skill; you don't maintain any of this by hand.
-
-## What's in here
-
-| File / folder | What it is |
-|---|---|
-| `session-log.md` | The live log — one entry per request, newest at the bottom. |
-| `archive/` | Older entries rolled off `session-log.md` to keep it lean. |
-| `usage/` | Exact token usage harvested from Claude Code transcripts (`usage.jsonl`) plus a readable `summary.md`. |
-| `YYYY-MM-DD-Recap.html` | Generated overview page — the main report back to you. Open in a browser (works on mobile too). One file per day you ask for a recap; asking again later the same day overwrites that day's file. |
-
-Each recap is built from a section picker, so it's a different report each time depending
-on what you ask for:
-
-- **Daily activity, cost & time** — always available, instant, deterministic.
-- **Workstreams, a milestones/capabilities timeline, how you use Claude, findings ranked by value** — optional, AI-written, Claude reads the log and drafts these on request.
-
-Each dated recap file is regenerated from scratch when you ask for one — treat it as a
-disposable snapshot, not something to hand-edit. Older recaps stay put once a new day's
-file is written; nothing deletes them automatically.
-
-## How to use it
-
-Just ask Claude in plain language — no commands to memorize:
-
-- **"What did this cost so far?"** → a cost breakdown by model and time window.
-- **"Make a recap"** → asks which sections to include (see the list above), generates today's `YYYY-MM-DD-Recap.html`. Just want the milestones timeline? Say so and it'll build a recap with only that section.
-- **"What decisions did I make?" / "why did we do X?"** → read `session-log/session-log.md` (and `archive/`) directly and answer conversationally — there's no dedicated recap section for this.
-- **"Log lighter" / "log deeper"** → change how much detail each entry captures.
-- **Declare a milestone** — say something like *"milestone: shipped the v1 API"* and Claude
-  records it so it shows up in the recap.
-
-## A note on the numbers
-
-Costs shown are API-equivalent value at list prices, not necessarily what you were billed.
-```
+The full text lives in
+[`assets/session-log-readme-template.md`](assets/session-log-readme-template.md) — Step 5
+copies it straight to `session-log/README.md`, no substitution needed (it's the same for
+every project).
 
 ---
 

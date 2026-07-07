@@ -9,13 +9,18 @@ reasoning behind a decision, the pattern in how someone asks for things — is g
 once it does. `showcase-log` copies that raw material into the project itself, as plain
 text, before it ages out, and turns it into a few things worth having on their own:
 
-- 📖 **A recap page** — the main way to get a report back. A single HTML file built from
-  a section picker: daily activity and cost are always available, plus optional AI-written
-  analysis of how the project actually went — including a milestones & capabilities
-  timeline. You choose which sections to include each time you ask for one.
-- 💰 **A cost report** — spend by model, by session, by week, by all-time. On demand, in chat.
+- 📖 **A recap page** — An HTML report of your project containing daily activity with costs
+  and model usage, a milestones & capabilities timeline, workstreams breakdown, and details 
+  about how you use Claude and ways you can improve based on your logged interactions. 
+  You choose which sections to include each time you ask for one.
+- 💰 **A cost report** — spend by model, and by time window (today / 7d / 30d / all-time). On demand, in chat.
 
 No dashboards to configure, no separate service to run. It's a `CLAUDE.md` instruction block plus a handful of scripts that read the log and write these outputs when asked.
+
+> [!IMPORTANT]
+> No log or recap data leaves your machine automatically. Every script is local only —
+> no network calls, no telemetry. Sharing a log or recap is something you choose to
+> do yourself, never something the skill does on its own.
 
 ## Getting started
 
@@ -23,10 +28,25 @@ No dashboards to configure, no separate service to run. It's a `CLAUDE.md` instr
 /showcase-log
 ```
 
-Run it once at the start of a project. Setup asks **no questions** — detail defaults to a
-standard tier (verbatim prompts, what was built, what was decided, cost) and everything else
-is automatic: the `CLAUDE.md` block, the folder, git hygiene, hooks. Change the detail level
-any time by just saying so — "log lighter" or "log deeper" — no need to re-run setup.
+Run it once at the start of a project. Everything else is automatic: 
+the `CLAUDE.md` block, the folder, git hygiene, hooks. 
+
+Change the logging detail level any time by just saying so:
+
+| | Lite | Standard (default) | Deep |
+|---|:---:|:---:|:---:|
+| **Say** | "log lighter" | "log at standard" | "log deeper" |
+| Verbatim prompts | X | X | X |
+| Cost | X | X | X |
+| Hours | X | X | X |
+| Model | X | X | X |
+| One-line outcomes | X | X | X |
+| What was built | | X | X |
+| What was decided | | X | X |
+| What was fixed | | X | X |
+| Reasoning | | | X |
+| Sources | | | X |
+| Verification | | | X |
 
 The earlier it's on, the less is lost — but running it on a project that's already underway
 isn't wasted either: setup mines whatever transcript history is still sitting in Claude
@@ -39,7 +59,7 @@ Ask in plain language, no commands to remember:
 | You ask | You get |
 |---|---|
 | "What did this cost so far?" | Cost by model and by time window (today / 7d / 30d / all-time) |
-| "Make a recap" | A section picker, then `session-log/YYYY-MM-DD-Recap.html` — open it in any browser |
+| "Make a recap" | A quick scope question (complete report / deterministic only / choose sections — the first is the one-click recommended option), then `session-log/YYYY-MM-DD-Recap.html` — open it in any browser |
 | "Take out the dollar amounts" / "swap cost for hours" | A second file, `...-Recap-Shared.html`, with every dollar figure replaced by its time or percentage equivalent. Only built if you ask for the cost swap specifically — never inferred from a generic "make this shareable" |
 | "What decisions did I make?" | Read straight from the log and answered in chat — no dedicated recap section |
 | "Log lighter" / "log deeper" | Changes how much detail future entries capture |
@@ -64,9 +84,10 @@ overwriting a single fixed file — recaps from different days accumulate side b
 
 The deterministic section is always safe and instant — it's just read off the log and usage
 snapshot. The four AI-written ones ask Claude to actually read the log and draft analysis,
-so they take a bit longer. Asking for a recap defaults to the complete report (all five);
-say what you want ("just the milestones timeline," "just the deterministic section," "skip
-the AI stuff") and that's what gets built instead. There's no standalone milestones list or
+so they take a bit longer. Asking for a recap always starts with a quick scope question;
+"Complete report" is the recommended, one-click option for all five, but you can just as
+easily say "just the milestones timeline," "just the deterministic section," or "skip
+the AI stuff" instead. There's no standalone milestones list or
 key-decisions view — milestones surface through the AI
 timeline, and decisions stay in the log itself, answered conversationally when you ask.
 
@@ -139,7 +160,9 @@ showcase-log/
 │  ├─ enrich-log-dates.mjs
 │  └─ lib/                     shared path/parsing/usage/transcript helpers
 ├─ assets/
-│  └─ recap-template.html      HTML shell generate-recap.mjs fills in
+│  ├─ recap-template.html      HTML shell generate-recap.mjs fills in
+│  ├─ logging-block-template.md    the CLAUDE.md block, read + filled in at setup only
+│  └─ session-log-readme-template.md  session-log/README.md's text, copied at setup only
 ├─ tests/                      smoke tests (dev-only — never copied into a project)
 └─ _dist/                      built distributable (see the repo root README)
 ```
@@ -157,7 +180,8 @@ no dependencies to install.
 A costs note, since it comes up: figures shown anywhere in this skill's output are
 **API-equivalent value at list prices** — what the usage would cost at API rates — not necessarily what a subscription plan was actually billed.
 
-And an honest overhead note: logging isn't free. Every request now costs one extra `date`
-tool call, a roughly 100–600 token log write depending on detail tier, and the logging
-instructions themselves take up space in every session's context. It's a real trade — small
-per request, but not zero — made in exchange for not losing the history at all.
+And an honest overhead note: logging isn't free. Every request costs one extra `date` tool
+call, a 100–600 token log write depending on detail tier — roughly $0.0015 to $0.015 per
+entry — plus the logging instructions taking up space in every session's context. That's a
+fraction of a cent to about a cent and a half: negligible for most people, in exchange for
+not losing the history at all.
